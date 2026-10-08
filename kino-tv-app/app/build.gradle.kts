@@ -1,4 +1,4 @@
-plugins {
+﻿plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -21,8 +21,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("michitv.jks")
+            storePassword = "michitv123"
+            keyAlias = "michitv_alias"
+            keyPassword = "michitv123"
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -77,4 +87,5 @@ dependencies {
     // QuickJS JavaScript engine for Kino plugins
     implementation("io.github.dokar3:quickjs-kt:1.0.0-alpha13")
 }
+
 
