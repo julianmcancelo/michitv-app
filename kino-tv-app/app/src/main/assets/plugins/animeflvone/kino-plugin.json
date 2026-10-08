@@ -1,0 +1,29 @@
+{
+  "id": "animeflvone",
+  "name": "AnimeFLV One",
+  "version": "0.3.0",
+  "apiVersion": 4,
+  "entry": "plugin.js",
+  "author": "YxhelZvl",
+  "color": "#5b588a",
+  "icon": "icon.png",
+  "homepage": "https://vww.animeflv.one/",
+  "hosts": [
+    "*.animeflv.one",
+    "animeflv.one",
+    "*.mp4upload.com",
+    "voe.sx",
+    "mp4upload.com",
+    "jeremyparticipantanything.com"
+  ],
+  "streamHosts": "any",
+  "capabilities": [
+    "search",
+    "home",
+    "browse",
+    "episodes",
+    "resolve",
+    "download"
+  ],
+  "description": "Series de anime en español, con múltiples servidores de video verificados."
+}

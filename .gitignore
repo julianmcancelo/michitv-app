@@ -1,0 +1,29 @@
+# Build artifacts y temporales de Gradle
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.dex
+
+# Subproyecto Android
+kino-tv-app/.gradle/
+kino-tv-app/build/
+kino-tv-app/*/build/
+kino-tv-app/local.properties
+kino-tv-app/.idea/
+
+# Screenshots temporales
+*.png
+!screenshots/*.png
+
+# Scripts de prueba y archivos scratch
+test_*.js
+*.log
+scratch/

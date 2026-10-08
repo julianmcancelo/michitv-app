@@ -1,0 +1,94 @@
+name: 🚀 Compilar y Publicar Release MichiTV
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag de la Versión (ej: v1.0.1)'
+        required: true
+        default: 'v1.0.1'
+
+jobs:
+  build-and-release:
+    name: 📦 Compilar APK y Publicar en GitHub Releases
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Clonar Repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ☕ Configurar Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: 🔧 Dar permisos de ejecución a Gradle Wrapper
+        run: |
+          cd kino-tv-app || true
+          chmod +x gradlew
+
+      - name: 🔨 Compilar APK Debug y Release
+        run: |
+          if [ -d "kino-tv-app" ]; then
+            cd kino-tv-app
+          fi
+          ./gradlew assembleDebug --stacktrace
+
+      - name: 📝 Preparar Archivo APK para Release
+        id: prepare_apk
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "main" ] || [ "$TAG_NAME" = "master" ]; then
+            TAG_NAME="${{ github.event.inputs.version_tag }}"
+          fi
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="v1.0.0"
+          fi
+
+          APK_PATH=$(find . -name "*.apk" | grep -i "debug" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ No se encontró ningún archivo APK generado."
+            exit 1
+          fi
+
+          OUTPUT_APK="MichiTV-${TAG_NAME}.apk"
+          cp "$APK_PATH" "$OUTPUT_APK"
+          echo "apk_file=$OUTPUT_APK" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "✅ APK preparado exitosamente: $OUTPUT_APK"
+
+      - name: 🚀 Publicar GitHub Release con Asset APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prepare_apk.outputs.tag_name }}
+          name: "🐾 MichiTV ${{ steps.prepare_apk.outputs.tag_name }}"
+          files: ${{ steps.prepare_apk.outputs.apk_file }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          body: |
+            ## 🐾 ¡Nueva Versión de MichiTV Disponible! (${{ steps.prepare_apk.outputs.tag_name }})
+            
+            ### 🌟 Novedades y Mejoras:
+            - ✨ Soporte nativo para actualización inteligente OTA desde la aplicación.
+            - ✈️ Módulo de activación y vinculación mediante Bot de Telegram.
+            - 🎬 Reproductor cinematográfico con selección de servidores y decodificación ultra rápida con Media3.
+            - 📱 Interfaz adaptativa premium para Smart TVs (Android TV / Fire TV) y Smartphones.
+            
+            ### 📥 Instalación:
+            1. Descarga el archivo adjunto `${{ steps.prepare_apk.outputs.apk_file }}`.
+            2. Instálalo en tu dispositivo Android o Smart TV.
+            3. ¡O actualiza directamente desde el menú de Ajustes dentro de MichiTV!
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
