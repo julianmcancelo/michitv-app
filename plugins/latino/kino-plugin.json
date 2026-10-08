@@ -1,0 +1,243 @@
+{
+  "id": "latino",
+  "name": "Latino",
+  "version": "1.0.2",
+  "apiVersion": 8,
+  "entry": "plugin.js",
+  "icon": "icon.png",
+  "description": "Películas y series en español latino, castellano o subtituladas desde varias fuentes",
+  "author": "xuper-plugin",
+  "homepage": "https://github.com/xuper-plugin/kino-plugin-latino",
+  "hosts": [
+    "lamovie.org",
+    "hackstore2.com",
+    "www.cinecalidad.vg",
+    "cinecalidad.vg",
+    "www3.seriesmetro.net",
+    "seriesmetro.net",
+    "seriesflixhd.casa",
+    "seriesflixhd.best",
+    "embed69.org",
+    "player.pelisserieshoy.com",
+    "proyectox.yoyatengoabuela.com",
+    "goodstream.one",
+    "*.goodstream.one",
+    "vimeos.net",
+    "*.vimeos.net",
+    "vimeos.zip",
+    "*.vimeos.zip",
+    "hlswish.com",
+    "*.hlswish.com",
+    "streamwish.com",
+    "*.streamwish.com",
+    "streamwish.to",
+    "*.streamwish.to",
+    "strwish.com",
+    "*.strwish.com",
+    "wishembed.com",
+    "*.wishembed.com",
+    "filelions.com",
+    "*.filelions.com",
+    "hglink.to",
+    "*.hglink.to",
+    "vibuxer.com",
+    "*.vibuxer.com",
+    "vidhide.com",
+    "*.vidhide.com",
+    "vidhidepro.com",
+    "*.vidhidepro.com",
+    "dintezuvio.com",
+    "*.dintezuvio.com",
+    "minochinos.com",
+    "*.minochinos.com",
+    "filelions.to",
+    "*.filelions.to",
+    "morencius.com",
+    "*.morencius.com",
+    "fastream.to",
+    "*.fastream.to",
+    "voe.sx",
+    "*.voe.sx",
+    "ok.ru",
+    "*.ok.ru",
+    "archive.org",
+    "*.archive.org",
+    "nupload.me",
+    "*.nupload.me",
+    "nupload.my",
+    "*.nupload.my"
+  ],
+  "capabilities": [
+    "search",
+    "home",
+    "browse",
+    "episodes",
+    "resolve",
+    "scopedSearch",
+    "download"
+  ],
+  "streamHosts": "any",
+  "fetchHosts": "any",
+  "categories": [
+    "movies",
+    "series"
+  ],
+  "color": "#C62828",
+  "section": {
+    "label": "Latino"
+  },
+  "theme": {
+    "accent": "#BA2D2A",
+    "onAccent": "#FFFFFF",
+    "background": "#0B0707",
+    "surface": "#1A1212",
+    "highlight": "#F4C7C3"
+  },
+  "browser": true,
+  "telemetry": true,
+  "settings": [
+    {
+      "key": "langSection",
+      "type": "section",
+      "label": "Idioma y calidad",
+      "hint": "Qué copia se abre primero cuando un título tiene varias."
+    },
+    {
+      "key": "preferred",
+      "type": "select",
+      "label": "Idioma preferido",
+      "default": "lat",
+      "options": [
+        {
+          "value": "lat",
+          "label": "Latino"
+        },
+        {
+          "value": "esp",
+          "label": "Castellano"
+        },
+        {
+          "value": "sub",
+          "label": "Subtitulado"
+        }
+      ]
+    },
+    {
+      "key": "maxQuality",
+      "type": "select",
+      "label": "Calidad máxima",
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": "Automática"
+        },
+        {
+          "value": "1080p",
+          "label": "Hasta 1080p"
+        },
+        {
+          "value": "720p",
+          "label": "Hasta 720p"
+        },
+        {
+          "value": "480p",
+          "label": "Hasta 480p (ahorra datos)"
+        }
+      ]
+    },
+    {
+      "key": "srcSection",
+      "type": "section",
+      "label": "Fuentes",
+      "hint": "Apaga una fuente si te da problemas. PelisSeriesHoy viene apagada: solo ofrece series y películas en pocos casos."
+    },
+    {
+      "key": "src_lamovie",
+      "type": "toggle",
+      "label": "LaMovie",
+      "default": true
+    },
+    {
+      "key": "src_hackstore",
+      "type": "toggle",
+      "label": "HackStore",
+      "default": true
+    },
+    {
+      "key": "src_cinecalidad",
+      "type": "toggle",
+      "label": "CineCalidad",
+      "default": true
+    },
+    {
+      "key": "src_seriesmetro",
+      "type": "toggle",
+      "label": "SeriesMetro",
+      "default": true
+    },
+    {
+      "key": "src_seriesflix",
+      "type": "toggle",
+      "label": "Seriesflix",
+      "default": true
+    },
+    {
+      "key": "src_embed69",
+      "type": "toggle",
+      "label": "Embed69",
+      "default": true
+    },
+    {
+      "key": "src_peliserieshoy",
+      "type": "toggle",
+      "label": "PelisSeriesHoy",
+      "default": false
+    },
+    {
+      "key": "src_zoowomaniacos",
+      "type": "toggle",
+      "label": "Zoowomaniacos",
+      "default": true
+    },
+    {
+      "key": "homeSection",
+      "type": "section",
+      "label": "Inicio"
+    },
+    {
+      "key": "homeRows",
+      "type": "toggle",
+      "label": "Filas en Inicio",
+      "default": true,
+      "hint": "Muestra los estrenos de Latino en el Inicio de Kino."
+    },
+    {
+      "key": "toolsSection",
+      "type": "section",
+      "label": "Estado",
+      "hint": "Cada fuente dice si respondió en su última consulta."
+    },
+    {
+      "key": "health",
+      "type": "status",
+      "label": "Fuentes"
+    },
+    {
+      "key": "probe",
+      "type": "action",
+      "label": "Probar fuentes ahora"
+    },
+    {
+      "key": "clearCache",
+      "type": "action",
+      "label": "Borrar caché"
+    },
+    {
+      "key": "resetPrefs",
+      "type": "action",
+      "label": "Restablecer preferencias",
+      "confirm": "¿Volver a los valores de fábrica de Latino?"
+    }
+  ]
+}
