@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -15,7 +15,7 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@android:drawable/sym_def_app_icon"
+        android:icon="@drawable/logo_michitv"
         android:label="MichiTV"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
@@ -43,3 +43,4 @@
     </application>
 
 </manifest>
+

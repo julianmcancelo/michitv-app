@@ -13,8 +13,8 @@ android {
         applicationId = "com.kinotv.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 4
+        versionName = "1.4.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -87,5 +87,7 @@ dependencies {
     // QuickJS JavaScript engine for Kino plugins
     implementation("io.github.dokar3:quickjs-kt:1.0.0-alpha13")
 }
+
+
 
 

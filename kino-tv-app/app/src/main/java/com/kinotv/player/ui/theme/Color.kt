@@ -1,15 +1,7 @@
-package com.kinotv.player.ui.theme
+﻿package com.kinotv.player.ui.theme
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-
-// Fondo y superficies MichiTV (Obsidian Black & Midnight Surfaces)
-val MichiBackground = Color(0xFF08090D)
-val MichiSurface = Color(0xFF12141C)
-val MichiSurfaceElevated = Color(0xFF191D28)
-val MichiCardBackground = Color(0xFF151822)
-val MichiBorder = Color(0xFF232838)
-val MichiBorderFocused = Color(0xFFFF6D00)
 
 // Acentos Naranja Cálido & Vibrante
 val MichiOrange = Color(0xFFFF6D00)
@@ -17,25 +9,42 @@ val MichiOrangeBright = Color(0xFFFF851B)
 val MichiOrangeLight = Color(0xFFFF9E3D)
 val MichiOrangeDark = Color(0xFFE65100)
 
-// Acentos complementarios
 val MichiGold = Color(0xFFFFB300)
-val MichiGreen = Color(0xFF00E676)
 val MichiCyan = Color(0xFF00E5FF)
 val MichiCyanBright = Color(0xFF18FFFF)
+val MichiGreen = Color(0xFF00E676)
 
-// Textos
-val MichiTextPrimary = Color(0xFFFFFFFF)
-val MichiTextSecondary = Color(0xFFA0ABBD)
-val MichiTextMuted = Color(0xFF677284)
+// --- DARK THEME COLORS ---
+val MichiDarkBackground = Color(0xFF08090D)
+val MichiDarkSurface = Color(0xFF12141C)
+val MichiDarkSurfaceElevated = Color(0xFF191D28)
+val MichiDarkBorder = Color(0xFF232838)
+val MichiDarkTextPrimary = Color(0xFFFFFFFF)
+val MichiDarkTextSecondary = Color(0xFFA0ABBD)
+val MichiDarkTextMuted = Color(0xFF677284)
 
-// Gradientes
-val MichiOrangeGradient = Brush.horizontalGradient(
-    colors = listOf(MichiOrange, MichiOrangeBright)
-)
+// --- LIGHT THEME COLORS ---
+val MichiLightBackground = Color(0xFFF0F2F5)
+val MichiLightSurface = Color(0xFFFFFFFF)
+val MichiLightSurfaceElevated = Color(0xFFE4E7EB)
+val MichiLightBorder = Color(0xFFD1D6DD)
+val MichiLightTextPrimary = Color(0xFF1A1D24)
+val MichiLightTextSecondary = Color(0xFF4A5568)
+val MichiLightTextMuted = Color(0xFF718096)
 
-val MichiOrangeVerticalGradient = Brush.verticalGradient(
-    colors = listOf(MichiOrangeBright, MichiOrange)
-)
+// Compatibilidad (Aliasing)
+val MichiBorder = MichiDarkBorder
+val MichiCardBackground = Color(0xFF151822)
+val MichiBackground = MichiDarkBackground
+val MichiSurface = MichiDarkSurface
+val MichiSurfaceElevated = MichiDarkSurfaceElevated
+val MichiTextPrimary = MichiDarkTextPrimary
+val MichiTextSecondary = MichiDarkTextSecondary
+val MichiTextMuted = MichiDarkTextMuted
+
+// Gradientes Universales
+val MichiOrangeGradient = Brush.horizontalGradient(colors = listOf(MichiOrange, MichiOrangeBright))
+val MichiOrangeVerticalGradient = Brush.verticalGradient(colors = listOf(MichiOrangeBright, MichiOrange))
 
 val CardBottomScrim = Brush.verticalGradient(
     colors = listOf(Color.Transparent, Color(0xCC08090D), Color(0xF608090D))

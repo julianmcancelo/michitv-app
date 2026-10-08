@@ -80,6 +80,10 @@ data class PlayRequest(
     val title: String = ""
 )
 
+object AppState {
+    var isDarkTheme = androidx.compose.runtime.mutableStateOf(true)
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -144,7 +148,7 @@ fun MainAppNavigation() {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MichiBackground)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             val isMobile = maxWidth < 650.dp
 
@@ -153,7 +157,7 @@ fun MainAppNavigation() {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MichiBackground)
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     MichiTopBar(
                         onSearchClick = { currentScreen = ScreenNav.SEARCH }
@@ -183,7 +187,7 @@ fun MainAppNavigation() {
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MichiBackground)
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     TvSidebar(
                         selectedScreen = currentScreen,
@@ -241,7 +245,7 @@ fun TvSidebar(
         modifier = Modifier
             .fillMaxHeight()
             .width(80.dp)
-            .background(MichiSurface)
+            .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MichiBorder)
             .padding(vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -317,15 +321,15 @@ fun SidebarIcon(
 
     val tint by animateColorAsState(
         targetValue = when {
-            isFocused -> Color.White
+            isFocused -> MaterialTheme.colorScheme.onSurface
             isSelected -> MichiOrange
-            else -> MichiTextMuted
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
         }, label = "tint"
     )
 
     val bgColor by animateColorAsState(
         targetValue = when {
-            isFocused -> MichiSurfaceElevated
+            isFocused -> MaterialTheme.colorScheme.surfaceVariant
             isSelected -> Color(0x33FF6D00)
             else -> Color.Transparent
         }, label = "icon_bg"
@@ -338,7 +342,7 @@ fun SidebarIcon(
             .background(bgColor)
             .border(
                 width = if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
-                color = if (isFocused) Color.White else if (isSelected) MichiOrange else Color.Transparent,
+                color = if (isFocused) MaterialTheme.colorScheme.onSurface else if (isSelected) MichiOrange else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             )
             .focusable(interactionSource = interactionSource)
@@ -434,7 +438,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         selectedItem?.let { item ->
             val bgUrl = item.background ?: item.poster
@@ -480,7 +484,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                         fontFamily = OutfitFontFamily,
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -491,7 +495,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                                 text = it,
                                 fontFamily = OutfitFontFamily,
                                 fontSize = 13.sp,
-                                color = MichiTextSecondary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.Medium
                             )
                             Spacer(modifier = Modifier.width(12.dp))
@@ -510,7 +514,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                             text = desc,
                             fontFamily = OutfitFontFamily,
                             fontSize = 13.sp,
-                            color = MichiTextSecondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.fillMaxWidth(0.75f),
@@ -567,7 +571,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                                         fontFamily = OutfitFontFamily,
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                                 Text(
@@ -647,7 +651,7 @@ fun TvMoviesScreen(onOpenItem: (CatalogItem) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
     ) {
         Text(
@@ -655,7 +659,7 @@ fun TvMoviesScreen(onOpenItem: (CatalogItem) -> Unit) {
             fontFamily = OutfitFontFamily,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -735,7 +739,7 @@ fun TvSeriesScreen(onOpenItem: (CatalogItem) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
     ) {
         Text(
@@ -743,13 +747,13 @@ fun TvSeriesScreen(onOpenItem: (CatalogItem) -> Unit) {
             fontFamily = OutfitFontFamily,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "Temporadas completas, episodios y especiales para disfrutar en MichiTV 🐾",
             fontFamily = OutfitFontFamily,
             fontSize = 13.sp,
-            color = MichiTextSecondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
         )
 
@@ -792,7 +796,7 @@ fun TvLiveScreen(onPlayChannel: (url: String, headers: Map<String, String>, name
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
     ) {
         Text(
@@ -800,13 +804,13 @@ fun TvLiveScreen(onPlayChannel: (url: String, headers: Map<String, String>, name
             fontFamily = OutfitFontFamily,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = "Canales de televisión en vivo transmitidos en tiempo real por streaming HLS.",
             fontFamily = OutfitFontFamily,
             fontSize = 13.sp,
-            color = MichiTextSecondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
         )
 
@@ -816,7 +820,7 @@ fun TvLiveScreen(onPlayChannel: (url: String, headers: Map<String, String>, name
             }
         } else if (rows.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No hay canales disponibles o el plugin iptv-org no está activo.", color = MichiTextMuted, fontFamily = OutfitFontFamily)
+                Text("No hay canales disponibles o el plugin iptv-org no está activo.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = OutfitFontFamily)
             }
         } else {
             LazyColumn(
@@ -838,7 +842,7 @@ fun TvLiveScreen(onPlayChannel: (url: String, headers: Map<String, String>, name
                                 fontFamily = OutfitFontFamily,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -871,7 +875,7 @@ fun TvChannelCard(channel: CatalogItem, onClick: () -> Unit) {
             .width(140.dp)
             .clip(RoundedCornerShape(12.dp))
             .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
-            .background(if (isFocused) MichiSurfaceElevated else MichiSurface)
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
             .focusable(interactionSource = interactionSource)
             .clickable(interactionSource = interactionSource, indication = null) { onClick() }
             .padding(12.dp),
@@ -891,7 +895,7 @@ fun TvChannelCard(channel: CatalogItem, onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .size(60.dp)
-                    .background(MichiSurfaceElevated, CircleShape),
+                    .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(Icons.Default.LiveTv, contentDescription = null, tint = MichiOrange)
@@ -901,7 +905,7 @@ fun TvChannelCard(channel: CatalogItem, onClick: () -> Unit) {
         Text(
             text = channel.name,
             fontFamily = OutfitFontFamily,
-            color = if (isFocused) Color.White else MichiTextSecondary,
+            color = if (isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -940,7 +944,7 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp)
     ) {
         Text(
@@ -948,7 +952,7 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
             fontFamily = OutfitFontFamily,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -965,11 +969,11 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MichiOrange,
                     unfocusedBorderColor = MichiBorder,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     cursorColor = MichiOrange,
                     focusedLabelColor = MichiOrange,
-                    unfocusedLabelColor = MichiTextMuted
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             )
             Spacer(modifier = Modifier.width(14.dp))
@@ -989,7 +993,7 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
             }
         } else if (results.isEmpty() && query.isNotBlank()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No se encontraron resultados para '$query' en MichiTV.", color = MichiTextMuted, fontFamily = OutfitFontFamily)
+                Text("No se encontraron resultados para '$query' en MichiTV.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = OutfitFontFamily)
             }
         } else {
             LazyVerticalGrid(
@@ -1047,12 +1051,12 @@ fun TvPluginsScreen() {
                     text = "Gestor y Registro de Plugins",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "Administra, activa o instala extensiones de catálogo y reproducción de MichiTV.",
                     fontSize = 14.sp,
-                    color = Color(0xFFAAAAAA)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             MichiButton(text = "↻ Recargar", onClick = { reload() })
@@ -1088,7 +1092,7 @@ fun TvPluginsScreen() {
                 ) {
                     items(installedPlugins) { p ->
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF161622)),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -1109,14 +1113,14 @@ fun TvPluginsScreen() {
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = p.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                        Text(text = p.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(text = "v${p.version}", color = Color(0xFF888899), fontSize = 12.sp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                         val statusBg = if (p.isEnabled) Color(0xFF2E7D32) else Color(0xFF555566)
                                         Text(
                                             text = if (p.isEnabled) "ACTIVO" else "INACTIVO",
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier
@@ -1158,7 +1162,7 @@ fun TvPluginsScreen() {
                 ) {
                     items(catalogPlugins) { item ->
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF161622)),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -1170,7 +1174,7 @@ fun TvPluginsScreen() {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = item.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                        Text(text = item.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                                         Spacer(modifier = Modifier.width(8.dp))
                                         if (item.isInstalled) {
                                             Text(
@@ -1211,19 +1215,19 @@ fun TvPluginsScreen() {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF161622), RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
                         .padding(20.dp)
                 ) {
                     Text(
                         text = "Registrar Plugin por Enlace o Repositorio",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Ingresa la URL de un manifiesto michitv-plugin.json o enlace directo de GitHub para descargar y registrar el plugin en la aplicación.",
-                        color = Color(0xFFAAAAAA),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1237,8 +1241,8 @@ fun TvPluginsScreen() {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MichiOrange,
                             unfocusedBorderColor = Color(0xFF333344),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1305,20 +1309,20 @@ fun TvSettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(text = "🐾", fontSize = 32.sp)
+            Icon(imageVector = Icons.Filled.Settings, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(32.dp))
             Column {
                 Text(
                     text = "Ajustes y Configuración",
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = OutfitFontFamily,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "Personaliza tu experiencia, vincula con Telegram y mantén MichiTV al día",
                     fontSize = 13.sp,
                     fontFamily = OutfitFontFamily,
-                    color = MichiTextMuted
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1327,7 +1331,7 @@ fun TvSettingsScreen(
 
         // ================= TARJETA 1: ACTIVACIÓN TELEGRAM BOT =================
         Card(
-            colors = CardDefaults.cardColors(containerColor = MichiSurface),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1348,10 +1352,10 @@ fun TvSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(text = "✈️", fontSize = 20.sp)
+                        Icon(imageVector = Icons.Filled.Send, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                         Text(
                             text = "Licencia Telegram",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
                             fontFamily = OutfitFontFamily,
                             fontSize = 17.sp,
@@ -1380,7 +1384,7 @@ fun TvSettingsScreen(
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = if (activationInfo.isActivated) "ACTIVO • VIP 👑" else "MODO GRATUITO",
+                            text = if (activationInfo.isActivated) "ACTIVO • VIP" else "MODO GRATUITO",
                             color = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -1395,7 +1399,7 @@ fun TvSettingsScreen(
                 // Código del Dispositivo
                 Text(
                     text = "Código Único de tu Dispositivo:",
-                    color = MichiTextMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontFamily = OutfitFontFamily
                 )
@@ -1405,7 +1409,7 @@ fun TvSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF101018))
+                        .background(MaterialTheme.colorScheme.background)
                         .border(1.dp, MichiCyan.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1429,7 +1433,7 @@ fun TvSettingsScreen(
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text(text = "Copiar 📋", color = MichiCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "Copiar", color = MichiCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -1440,20 +1444,20 @@ fun TvSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF161822))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         text = "Cómo activar con el Bot oficial:",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = OutfitFontFamily
                     )
                     Text(
                         text = "1. Abre Telegram y busca ${activationInfo.botUsername}",
-                        color = MichiTextMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontFamily = OutfitFontFamily
                     )
@@ -1466,7 +1470,7 @@ fun TvSettingsScreen(
                     )
                     Text(
                         text = "3. O ingresa abajo la clave provista por el bot:",
-                        color = MichiTextMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontFamily = OutfitFontFamily
                     )
@@ -1483,14 +1487,14 @@ fun TvSettingsScreen(
                     OutlinedTextField(
                         value = inputVoucherKey,
                         onValueChange = { inputVoucherKey = it },
-                        placeholder = { Text("Clave / Voucher (ej. MICHI-VIP-2026)", fontSize = 13.sp, color = MichiTextMuted) },
+                        placeholder = { Text("Clave / Voucher (ej. MICHI-VIP-2026)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MichiOrange,
                             unfocusedBorderColor = MichiBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         ),
                         shape = RoundedCornerShape(10.dp)
                     )
@@ -1502,7 +1506,7 @@ fun TvSettingsScreen(
                                 if (success) {
                                     activationInfo = TelegramActivationManager.getActivationInfo(context)
                                     inputVoucherKey = ""
-                                    Toast.makeText(context, "¡Dispositivo Activado con Éxito! 🐾", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "¡Dispositivo Activado con Éxito!", Toast.LENGTH_LONG).show()
                                 } else {
                                     Toast.makeText(context, "Clave no válida. Verifica con el bot.", Toast.LENGTH_LONG).show()
                                 }
@@ -1512,7 +1516,7 @@ fun TvSettingsScreen(
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
                     ) {
-                        Text(text = "Activar ⚡", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(text = "Activar", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
@@ -1548,7 +1552,7 @@ fun TvSettingsScreen(
 
         // ================= TARJETA 2: ACTUALIZACIONES GITHUB RELEASES OTA =================
         Card(
-            colors = CardDefaults.cardColors(containerColor = MichiSurface),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -1565,10 +1569,10 @@ fun TvSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(text = "🚀", fontSize = 20.sp)
+                        Icon(imageVector = Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                         Text(
                             text = "Actualizaciones OTA",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
                             fontFamily = OutfitFontFamily,
                             fontSize = 17.sp,
@@ -1582,7 +1586,7 @@ fun TvSettingsScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF262A3B))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -1599,7 +1603,7 @@ fun TvSettingsScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Comprueba e instala las últimas mejoras, parches de seguridad y nuevos plugins automáticamente desde el repositorio de GitHub.",
-                    color = MichiTextMuted,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontFamily = OutfitFontFamily
                 )
@@ -1622,7 +1626,7 @@ fun TvSettingsScreen(
                                 } else {
                                     Toast.makeText(
                                         context,
-                                        "¡MichiTV ya está en su versión más reciente (v${AppUpdateManager.getCurrentVersionName(context)})! 🐾",
+                                        "¡MichiTV está actualizado (v${AppUpdateManager.getCurrentVersionName(context)})!",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
@@ -1642,7 +1646,7 @@ fun TvSettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(text = "Buscando...", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         } else {
-                            Text(text = "Buscar Actualizaciones 🔄", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(text = "Buscar Actualizaciones", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
 
@@ -1654,7 +1658,7 @@ fun TvSettingsScreen(
                     ) {
                         Text(
                             text = "Repo: $ghOwner/$ghRepo",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -1671,7 +1675,7 @@ fun TvSettingsScreen(
                 ) {
                     Text(
                         text = "Buscar actualizaciones automáticamente al iniciar",
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.sp,
                         fontFamily = OutfitFontFamily
                     )
@@ -1694,14 +1698,14 @@ fun TvSettingsScreen(
 
         // ================= TARJETA 3: PREFERENCIAS DE REPRODUCTOR =================
         Card(
-            colors = CardDefaults.cardColors(containerColor = MichiSurface),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .border(1.dp, MichiBorder, RoundedCornerShape(16.dp))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Preferencias de Audio y Subtítulos", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
+                Text(text = "Preferencias de Audio y Subtítulos", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val langs = listOf("Español Latino", "Castellano", "Subtitulado")
@@ -1715,7 +1719,7 @@ fun TvSettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
-                Text(text = "Servidor de Video Preferido", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
+                Text(text = "Servidor de Video Preferido", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val servers = listOf("Voe (Recomendado)", "FuegoCine Direct", "StreamWish")
@@ -1745,9 +1749,9 @@ fun TvSettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "MichiTV 🐾 v${AppUpdateManager.getCurrentVersionName(context)} • Sistema de Streaming Inteligente • Motor QuickJS & ExoPlayer Media3",
+            text = "MichiTV v${AppUpdateManager.getCurrentVersionName(context)} • Sistema de Streaming Inteligente • Motor QuickJS & ExoPlayer Media3",
             fontFamily = OutfitFontFamily,
-            color = MichiTextMuted,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -1764,13 +1768,13 @@ fun TvSettingsScreen(
             onDismissRequest = { showGhConfigDialog = false },
             containerColor = Color(0xFF181A26),
             title = {
-                Text(text = "Configuración del Repositorio GitHub", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(text = "Configuración del Repositorio GitHub", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "Especifica el usuario/organización y el nombre del repositorio donde publicas los releases:",
-                        color = MichiTextMuted,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
                     )
                     OutlinedTextField(
@@ -1781,8 +1785,8 @@ fun TvSettingsScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MichiCyan,
                             unfocusedBorderColor = MichiBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                     OutlinedTextField(
@@ -1793,8 +1797,8 @@ fun TvSettingsScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MichiCyan,
                             unfocusedBorderColor = MichiBorder,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
                 }
@@ -1815,7 +1819,7 @@ fun TvSettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showGhConfigDialog = false }) {
-                    Text("Cancelar", color = MichiTextMuted)
+                    Text("Cancelar", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         )
@@ -1871,7 +1875,7 @@ fun DetailScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         val isMobile = maxWidth < 650.dp
         val bg = details?.background ?: item.background ?: item.poster
@@ -1934,7 +1938,7 @@ fun DetailScreen(
                                 fontFamily = OutfitFontFamily,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 lineHeight = 30.sp
                             )
                             Spacer(modifier = Modifier.height(10.dp))
@@ -1963,14 +1967,14 @@ fun DetailScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(MichiSurface, RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
                                         .padding(16.dp)
                                 ) {
                                     CircularProgressIndicator(color = MichiOrange, modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Text(
                                         "Conectando stream de MichiTV...",
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontFamily = OutfitFontFamily,
                                         fontSize = 13.sp
                                     )
@@ -2027,14 +2031,14 @@ fun DetailScreen(
                                     fontFamily = OutfitFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = desc,
                                     fontFamily = OutfitFontFamily,
                                     fontSize = 13.sp,
-                                    color = MichiTextSecondary,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 19.sp
                                 )
                             }
@@ -2051,7 +2055,7 @@ fun DetailScreen(
                                         fontFamily = OutfitFontFamily,
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                     MichiBadge(text = "${episodesToShow.size} caps", isAccent = true)
                                 }
@@ -2145,7 +2149,7 @@ fun DetailScreen(
                                     fontFamily = OutfitFontFamily,
                                     fontSize = 32.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Row(
@@ -2167,7 +2171,7 @@ fun DetailScreen(
                                         text = desc,
                                         fontFamily = OutfitFontFamily,
                                         fontSize = 14.sp,
-                                        color = MichiTextSecondary,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         lineHeight = 20.sp,
                                         maxLines = 4,
                                         overflow = TextOverflow.Ellipsis
@@ -2180,7 +2184,7 @@ fun DetailScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         CircularProgressIndicator(color = MichiOrange, modifier = Modifier.size(26.dp))
                                         Spacer(modifier = Modifier.width(14.dp))
-                                        Text("Conectando stream de MichiTV...", color = Color.White, fontFamily = OutfitFontFamily)
+                                        Text("Conectando stream de MichiTV...", color = MaterialTheme.colorScheme.onSurface, fontFamily = OutfitFontFamily)
                                     }
                                 } else {
                                     if (meta.type != "series" || pluginEpisodes.isEmpty()) {
@@ -2213,7 +2217,7 @@ fun DetailScreen(
                                             fontFamily = OutfitFontFamily,
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.padding(bottom = 12.dp)
                                         )
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -2348,7 +2352,7 @@ fun TvPlayerScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Aviso de Reproducción", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "Aviso de Reproducción", color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = errorMessage!!, color = Color(0xFFFFAAAA), fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -2381,7 +2385,7 @@ fun TvPlayerScreen(
             Text(
                 text = title,
                 fontFamily = OutfitFontFamily,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -2404,7 +2408,7 @@ fun MichiEpisodeCard(episode: EpisodeItem, onClick: () -> Unit) {
             .width(180.dp)
             .clip(RoundedCornerShape(10.dp))
             .border(1.5.dp, borderColor, RoundedCornerShape(10.dp))
-            .background(if (isFocused) MichiSurfaceElevated else MichiSurface)
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
             .focusable(interactionSource = interactionSource)
             .clickable(interactionSource = interactionSource, indication = null) { onClick() }
     ) {
@@ -2443,7 +2447,7 @@ fun MichiEpisodeCard(episode: EpisodeItem, onClick: () -> Unit) {
             fontFamily = OutfitFontFamily,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isFocused) Color.White else MichiTextSecondary,
+            color = if (isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(8.dp)
@@ -2490,6 +2494,9 @@ fun TvEpisodeCard(
         onClick = onClick
     )
 }
+
+
+
 
 
 

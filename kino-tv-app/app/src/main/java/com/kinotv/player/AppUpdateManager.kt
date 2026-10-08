@@ -1,4 +1,4 @@
-package com.kinotv.player
+﻿package com.kinotv.player
 
 import android.content.Context
 import android.content.Intent
@@ -44,8 +44,8 @@ object AppUpdateManager {
     private const val KEY_LAST_CHECK_TIME = "last_check_time"
 
     // Repositorio predeterminado (fácilmente personalizable en Ajustes)
-    private const val DEFAULT_OWNER = "Julian"
-    private const val DEFAULT_REPO = "MichiTV"
+    private const val DEFAULT_OWNER = "julianmcancelo"
+    private const val DEFAULT_REPO = "michitv-app"
 
     private val _downloadState = MutableStateFlow<UpdateDownloadState>(UpdateDownloadState.Idle)
     val downloadState: StateFlow<UpdateDownloadState> = _downloadState
@@ -292,3 +292,4 @@ object AppUpdateManager {
         _downloadState.value = UpdateDownloadState.Idle
     }
 }
+
