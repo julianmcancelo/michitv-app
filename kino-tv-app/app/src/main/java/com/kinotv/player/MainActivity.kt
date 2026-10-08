@@ -911,7 +911,7 @@ fun TvChannelCard(channel: CatalogItem, onClick: () -> Unit) {
 }
 
 @Composable
-@androidx.compose.foundation.ExperimentalFoundationApi
+
 fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<CatalogItem>>(emptyList()) }
@@ -1003,7 +1003,7 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
                         item = item,
                         onFocus = {},
                         onClick = { onOpenItem(item) },
-                        modifier = Modifier.animateItemPlacement()
+                        
                     )
                 }
             }
@@ -1067,7 +1067,7 @@ fun TvPluginsScreen() {
                 onClick = { selectedTab = 0 }
             )
             MichiButton(
-                text = "Cat�logo MichiTV & Stremio (${catalogPlugins.size})",
+                text = "Repositorio Oficial (${catalogPlugins.size})",
                 isPrimary = selectedTab == 1,
                 onClick = { selectedTab = 1 }
             )
@@ -2490,6 +2490,9 @@ fun TvEpisodeCard(
         onClick = onClick
     )
 }
+
+
+
 
 
 

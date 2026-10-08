@@ -1,4 +1,4 @@
-package com.kinotv.player
+﻿package com.kinotv.player
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -136,6 +136,35 @@ object PluginManager {
         val result = mutableListOf<CatalogPluginItem>()
 
         try {
+            // Cargar repositorio oficial remoto
+            val req = Request.Builder().url("https://raw.githubusercontent.com/julianmcancelo/michitv-app/master/repo/michitv-repo.json").build()
+            val res = client.newCall(req).execute()
+            if (res.isSuccessful) {
+                val body = res.body?.string() ?: "{}"
+                val root = JSONObject(body)
+                val arr = root.optJSONArray("plugins") ?: JSONArray()
+                for (i in 0 until arr.length()) {
+                    val it = arr.getJSONObject(i)
+                    val id = it.optString("id")
+                    val repoUrl = it.optString("url")
+                    val name = it.optString("name", id)
+                    val description = it.optString("description", "")
+                    result.add(
+                        CatalogPluginItem(
+                            id = id,
+                            name = name,
+                            description = description,
+                            repo = repoUrl,
+                            isInstalled = installedIds.contains(id)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        try {
             val jsonStr = context.assets.open("catalog.json").bufferedReader().use { it.readText() }
             val root = JSONObject(jsonStr)
             val arr = root.optJSONArray("plugins") ?: JSONArray()
@@ -234,3 +263,4 @@ object PluginManager {
         }
     }
 }
+
