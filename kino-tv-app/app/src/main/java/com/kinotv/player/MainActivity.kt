@@ -1477,6 +1477,7 @@ fun TvSettingsScreen(
     var ghOwner by remember { mutableStateOf(AppUpdateManager.getGithubOwner(context)) }
     var ghRepo by remember { mutableStateOf(AppUpdateManager.getGithubRepo(context)) }
     var showGhConfigDialog by remember { mutableStateOf(false) }
+    var settingsTab by remember { mutableStateOf(3) }
 
     Column(
         modifier = Modifier
@@ -1552,8 +1553,32 @@ fun TvSettingsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
+        // Pestañas exclusivas: cada apartado tiene su propio espacio
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            val settingsTabs = listOf(
+                "Apariencia" to 0,
+                "Actualización" to 1,
+                "Reproducción" to 2,
+                "Licencia" to 3,
+                "Almacenamiento" to 4
+            )
+            items(settingsTabs) { (label, idx) ->
+                MichiChip(
+                    text = label,
+                    isSelected = settingsTab == idx,
+                    onClick = { settingsTab = idx }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (settingsTab == 0) {
         // ================= SECCIÓN 1: APARIENCIA Y TEMA =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1649,8 +1674,11 @@ fun TvSettingsScreen(
             }
         }
 
+        } // fin pestaña Apariencia
+
         Spacer(modifier = Modifier.height(20.dp))
 
+        if (settingsTab == 1) {
         // ================= SECCIÓN 2: ACTUALIZACIONES OTA (GITHUB RELEASES) =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1800,8 +1828,11 @@ fun TvSettingsScreen(
             }
         }
 
+        } // fin pestaña Actualización
+
         Spacer(modifier = Modifier.height(20.dp))
 
+        if (settingsTab == 2) {
         // ================= SECCIÓN 3: REPRODUCTOR Y STREAMING =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -1881,8 +1912,11 @@ fun TvSettingsScreen(
             }
         }
 
+        } // fin pestaña Reproducción
+
         Spacer(modifier = Modifier.height(20.dp))
 
+        if (settingsTab == 3) {
         // ================= SECCIÓN 4: ACTIVACIÓN Y LICENCIA TELEGRAM =================
         val isMobile = LocalConfiguration.current.screenWidthDp < 650
         val rawBotName = activationInfo.botUsername.removePrefix("@")
@@ -2452,7 +2486,35 @@ fun TvSettingsScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Canje de Clave / Voucher
+                // Activación manual con PIN o voucher (colapsable; la vía principal es QR/auto)
+                var showManualActivation by remember(activationInfo.isActivated) { mutableStateOf(!activationInfo.isActivated) }
+                TextButton(
+                    onClick = { showManualActivation = !showManualActivation },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.VpnKey,
+                        contentDescription = null,
+                        tint = MichiOrange,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Activación manual con PIN o voucher",
+                        color = MichiOrange,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OutfitFontFamily
+                    )
+                    Icon(
+                        imageVector = if (showManualActivation) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null,
+                        tint = MichiOrange,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                if (showManualActivation) {
                 Text(
                     text = "O ingresa tu PIN, voucher o clave de activación:",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2501,6 +2563,7 @@ fun TvSettingsScreen(
                         Text(text = "Activar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
+                } // fin activación manual
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -2765,8 +2828,11 @@ fun TvSettingsScreen(
             }
         }
 
+        } // fin pestaña Licencia
+
         Spacer(modifier = Modifier.height(20.dp))
 
+        if (settingsTab == 4) {
         // ================= SECCIÓN 5: ALMACENAMIENTO Y MANTENIMIENTO =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2814,6 +2880,8 @@ fun TvSettingsScreen(
                 )
             }
         }
+
+        } // fin pestaña Almacenamiento
 
         Spacer(modifier = Modifier.height(28.dp))
 
