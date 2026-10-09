@@ -19,8 +19,29 @@ data class TelegramActivationInfo(
     val telegramUser: String?,
     val planName: String,
     val activatedAt: String?,
-    val botUsername: String
-)
+    val botUsername: String,
+    val expiresAtIso: String? = null,
+    val licenseKey: String? = null
+) {
+    fun daysLeft(): Long? {
+        val iso = expiresAtIso ?: return null
+        return try {
+            val exp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                .parse(iso.substring(0, 19)) ?: return null
+            val diff = exp.time - System.currentTimeMillis()
+            if (diff <= 0) 0 else (diff / (1000 * 60 * 60 * 24)) + 1
+        } catch (e: Exception) { null }
+    }
+
+    fun isExpired(): Boolean {
+        val iso = expiresAtIso ?: return false
+        return try {
+            val exp = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                .parse(iso.substring(0, 19)) ?: return false
+            exp.time <= System.currentTimeMillis()
+        } catch (e: Exception) { false }
+    }
+}
 
 object TelegramActivationManager {
     private const val PREFS_NAME = "michi_telegram_activation"
@@ -30,6 +51,8 @@ object TelegramActivationManager {
     private const val KEY_TG_USER = "tg_user"
     private const val KEY_PLAN_NAME = "plan_name"
     private const val KEY_ACTIVATED_AT = "activated_at"
+    private const val KEY_EXPIRES_AT = "expires_at"
+    private const val KEY_LICENSE_KEY = "license_key"
     private const val KEY_BOT_USERNAME = "bot_username"
     private const val KEY_SERVER_URL = "server_url"
     private const val DEFAULT_BOT = "@MichitvBot"
@@ -94,6 +117,8 @@ object TelegramActivationManager {
         val plan = prefs.getString(KEY_PLAN_NAME, "Plan Gratuito MichiTV") ?: "Plan Gratuito MichiTV"
         val date = prefs.getString(KEY_ACTIVATED_AT, null)
         val bot = prefs.getString(KEY_BOT_USERNAME, DEFAULT_BOT) ?: DEFAULT_BOT
+        val expires = prefs.getString(KEY_EXPIRES_AT, null)
+        val license = prefs.getString(KEY_LICENSE_KEY, null)
 
         return TelegramActivationInfo(
             isActivated = isAct,
@@ -102,7 +127,9 @@ object TelegramActivationManager {
             telegramUser = user,
             planName = plan,
             activatedAt = date,
-            botUsername = bot
+            botUsername = bot,
+            expiresAtIso = expires,
+            licenseKey = license
         )
     }
 
@@ -143,7 +170,7 @@ object TelegramActivationManager {
                     val isAct = json.optBoolean("isActivated", false)
                     if (isAct) {
                         val plan = json.optString("planName", "Membresía Premium MichiTV VIP 🐾")
-                        val tgUser = json.optString("tgUser", "Usuario Telegram")
+                        val tgUser = json.optString("tgUser", json.optString("tg_username", "Usuario Telegram"))
                         val nowStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
 
                         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -152,6 +179,8 @@ object TelegramActivationManager {
                             .putString(KEY_PLAN_NAME, plan)
                             .putString(KEY_TG_USER, tgUser)
                             .putString(KEY_ACTIVATED_AT, nowStr)
+                            .putString(KEY_EXPIRES_AT, json.optString("expiresAt", null))
+                            .putString(KEY_LICENSE_KEY, json.optString("licenseKey", null))
                             .putString(KEY_SERVER_URL, host)
                             .apply()
 
@@ -218,6 +247,8 @@ object TelegramActivationManager {
             .remove(KEY_TG_USER)
             .putString(KEY_PLAN_NAME, "Plan Gratuito MichiTV")
             .remove(KEY_ACTIVATED_AT)
+            .remove(KEY_EXPIRES_AT)
+            .remove(KEY_LICENSE_KEY)
             .apply()
     }
 

@@ -1381,7 +1381,8 @@ const server = http.createServer((req, res) => {
                 isActivated: dev.activated && !isExpired,
                 planName: dev.plan,
                 expiresAt: dev.expires_at,
-                licenseKey: dev.license_key
+                licenseKey: dev.license_key,
+                tg_username: dev.tg_username || null
             }));
         } else {
             res.writeHead(200);

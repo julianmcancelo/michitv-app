@@ -1459,6 +1459,18 @@ fun TvSettingsScreen(
         }
     }
 
+    // Auto-reparar datos de suscripción viejos (sin vencimiento ni usuario real)
+    var autoRefreshedSub by remember { mutableStateOf(false) }
+    LaunchedEffect(activationInfo.isActivated) {
+        if (!autoRefreshedSub && activationInfo.isActivated && activationInfo.expiresAtIso == null) {
+            autoRefreshedSub = true
+            val res = withContext(Dispatchers.IO) {
+                TelegramActivationManager.checkRemoteStatus(context)
+            }
+            if (res != null) activationInfo = res
+        }
+    }
+
     // Actualizaciones OTA
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var autoCheckEnabled by remember { mutableStateOf(AppUpdateManager.isAutoCheckEnabled(context)) }
@@ -2492,97 +2504,261 @@ fun TvSettingsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Servidor del bot (para celulares/TV físicos en tu WiFi)
-                var serverUrlInput by remember { mutableStateOf(TelegramActivationManager.getServerUrl(context)) }
-                Text(
-                    text = "Servidor del bot (solo si usas un equipo físico):",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    fontFamily = OutfitFontFamily
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Ajustes avanzados (servidor del bot): colapsado para no ensuciar la vista
+                var showAdvancedServer by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { showAdvancedServer = !showAdvancedServer },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    OutlinedTextField(
-                        value = serverUrlInput,
-                        onValueChange = { serverUrlInput = it },
-                        placeholder = { Text("http://192.168.0.164:3000", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MichiCyan,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        shape = RoundedCornerShape(10.dp)
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp)
                     )
-                    Button(
-                        onClick = {
-                            val clean = serverUrlInput.trim().removeSuffix("/")
-                            if (clean.isNotBlank()) {
-                                TelegramActivationManager.setServerUrl(context, clean)
-                                RemoteConfigManager.setServerUrl(context, clean)
-                                serverUrlInput = clean
-                                Toast.makeText(context, "Servidor guardado. Comprobando activación...", Toast.LENGTH_SHORT).show()
-                                coroutineScope.launch {
-                                    val res = withContext(Dispatchers.IO) {
-                                        TelegramActivationManager.checkRemoteStatus(context)
-                                    }
-                                    if (res != null && res.isActivated) {
-                                        activationInfo = res
-                                        showCelebrationDialog = true
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Ajustes avanzados",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = OutfitFontFamily
+                    )
+                    Icon(
+                        imageVector = if (showAdvancedServer) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                if (showAdvancedServer) {
+                    // Servidor del bot (para celulares/TV físicos en tu WiFi)
+                    var serverUrlInput by remember { mutableStateOf(TelegramActivationManager.getServerUrl(context)) }
+                    Text(
+                        text = "Servidor del bot (solo si usas un equipo físico):",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        fontFamily = OutfitFontFamily
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = serverUrlInput,
+                            onValueChange = { serverUrlInput = it },
+                            placeholder = { Text("http://192.168.0.164:3000", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MichiCyan,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        Button(
+                            onClick = {
+                                val clean = serverUrlInput.trim().removeSuffix("/")
+                                if (clean.isNotBlank()) {
+                                    TelegramActivationManager.setServerUrl(context, clean)
+                                    RemoteConfigManager.setServerUrl(context, clean)
+                                    serverUrlInput = clean
+                                    Toast.makeText(context, "Servidor guardado. Comprobando activación...", Toast.LENGTH_SHORT).show()
+                                    coroutineScope.launch {
+                                        val res = withContext(Dispatchers.IO) {
+                                            TelegramActivationManager.checkRemoteStatus(context)
+                                        }
+                                        if (res != null && res.isActivated) {
+                                            activationInfo = res
+                                            showCelebrationDialog = true
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
-                        Text(text = "Guardar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                        ) {
+                            Text(text = "Guardar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
                 if (activationInfo.isActivated) {
                     Spacer(modifier = Modifier.height(14.dp))
-                    Row(
+                    var showUnlinkConfirm by remember { mutableStateOf(false) }
+                    var isRefreshingStatus by remember { mutableStateOf(false) }
+                    val expired = activationInfo.isExpired()
+                    val daysLeft = activationInfo.daysLeft()
+                    val statusColor = if (expired) Color(0xFFFF5252) else Color(0xFF00E676)
+
+                    if (showUnlinkConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showUnlinkConfirm = false },
+                            title = { Text("Desvincular dispositivo", fontWeight = FontWeight.Bold) },
+                            text = {
+                                Text("Se cerrará la sesión VIP en este equipo (${activationInfo.deviceCode}) y volverá al modo gratuito. Podrás reactivarlo cuando quieras con el bot.")
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showUnlinkConfirm = false
+                                        TelegramActivationManager.deactivate(context)
+                                        activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                        Toast.makeText(context, "Sesión cerrada en este dispositivo", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) { Text("Sí, desvincular", color = Color.White, fontWeight = FontWeight.Bold) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showUnlinkConfirm = false }) {
+                                    Text("Cancelar", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            shape = RoundedCornerShape(18.dp)
+                        )
+                    }
+
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF00E676).copy(alpha = 0.1f))
-                            .border(1.dp, Color(0xFF00E676).copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(statusColor.copy(alpha = 0.1f))
+                            .border(1.dp, statusColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = "Suscripción: ${activationInfo.planName}",
-                                color = Color(0xFF00E676),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                fontFamily = OutfitFontFamily
-                            )
-                            Text(
-                                text = "Activado: ${activationInfo.activatedAt ?: "Reciente"}",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp,
-                                fontFamily = OutfitFontFamily
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (expired) Icons.Filled.Warning else Icons.Filled.WorkspacePremium,
+                                    contentDescription = null,
+                                    tint = statusColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = if (expired) "Suscripción vencida" else "Suscripción activa",
+                                    color = statusColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    fontFamily = OutfitFontFamily
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        isRefreshingStatus = true
+                                        val res = withContext(Dispatchers.IO) {
+                                            TelegramActivationManager.checkRemoteStatus(context)
+                                        }
+                                        isRefreshingStatus = false
+                                        if (res != null) {
+                                            activationInfo = res
+                                            Toast.makeText(context, "Estado actualizado", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Sin respuesta del servidor. Revisa la URL del bot.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                enabled = !isRefreshingStatus,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isRefreshingStatus) {
+                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = statusColor)
+                                    } else {
+                                        Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = statusColor, modifier = Modifier.size(14.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isRefreshingStatus) "Actualizando..." else "Actualizar",
+                                        color = statusColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
 
-                        TextButton(
-                            onClick = {
-                                TelegramActivationManager.deactivate(context)
-                                activationInfo = TelegramActivationManager.getActivationInfo(context)
-                                Toast.makeText(context, "Dispositivo desvinculado", Toast.LENGTH_SHORT).show()
+                        SubscriptionLine(label = "Plan", value = activationInfo.planName)
+                        if (!activationInfo.telegramUser.isNullOrBlank()) {
+                            SubscriptionLine(label = "Cuenta", value = activationInfo.telegramUser!!)
+                        }
+                        SubscriptionLine(label = "Equipo", value = activationInfo.deviceCode)
+                        SubscriptionLine(
+                            label = "Vence",
+                            value = when {
+                                daysLeft == null -> "Sin vencimiento"
+                                expired || daysLeft <= 0 -> "Vencida"
+                                daysLeft == 1L -> "Mañana (1 día)"
+                                else -> "Quedan $daysLeft días"
                             }
+                        )
+                        if (!activationInfo.licenseKey.isNullOrBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Clave: ${activationInfo.licenseKey}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    fontFamily = OutfitFontFamily,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(activationInfo.licenseKey!!))
+                                        Toast.makeText(context, "Clave copiada", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ContentCopy,
+                                        contentDescription = "Copiar clave",
+                                        tint = statusColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { showUnlinkConfirm = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text(text = "Desvincular", color = Color.Red.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = Icons.Filled.Logout,
+                                contentDescription = null,
+                                tint = Color.Red.copy(alpha = 0.9f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Cerrar sesión en este dispositivo",
+                                color = Color.Red.copy(alpha = 0.9f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -2727,6 +2903,34 @@ fun TvSettingsScreen(
                     Text("Cancelar", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        )
+    }
+}
+
+@Composable
+fun SubscriptionLine(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            fontFamily = OutfitFontFamily
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = value,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            fontFamily = OutfitFontFamily,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false)
         )
     }
 }
