@@ -139,9 +139,10 @@ fun MainAppNavigation() {
     var remoteConfig by remember { mutableStateOf(RemoteConfig()) }
 
     // Polling reactivo en tiempo real para auto-activacion sin escribir nada
+    // (pausado si el usuario cerró sesión manualmente: solo reactiva por acción explícita)
     LaunchedEffect(activationInfo.isActivated) {
         if (!activationInfo.isActivated) {
-            while (!activationInfo.isActivated) {
+            while (!activationInfo.isActivated && !TelegramActivationManager.isManualLogout(context)) {
                 kotlinx.coroutines.delay(2500)
                 val updated = withContext(Dispatchers.IO) {
                     TelegramActivationManager.checkRemoteStatus(context)
@@ -2141,6 +2142,7 @@ fun TvSettingsScreen(
                             onClick = {
                                 coroutineScope.launch {
                                     isManualChecking = true
+                                    TelegramActivationManager.clearManualLogout(context)
                                     val res = withContext(Dispatchers.IO) {
                                         TelegramActivationManager.checkRemoteStatus(context)
                                     }
@@ -2275,44 +2277,7 @@ fun TvSettingsScreen(
                     }
                 }
 
-                // Botón Prueba VIP Gratis de 7 Días (1 Toque)
-                if (!activationInfo.isActivated) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            val ok = TelegramActivationManager.activateFreeTrial(context)
-                            if (ok) {
-                                activationInfo = TelegramActivationManager.getActivationInfo(context)
-                                showCelebrationDialog = true
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFFB300)
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.CardGiftcard,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "Activar Prueba VIP Gratis de 7 Días (1 Toque)",
-                                color = Color.Black,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontFamily = OutfitFontFamily,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
+                // (Prueba gratuita desactivada: solo QR/Telegram o voucher del bot)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -2656,6 +2621,7 @@ fun TvSettingsScreen(
                                     serverUrlInput = clean
                                     Toast.makeText(context, "Servidor guardado. Comprobando activación...", Toast.LENGTH_SHORT).show()
                                     coroutineScope.launch {
+                                        TelegramActivationManager.clearManualLogout(context)
                                         val res = withContext(Dispatchers.IO) {
                                             TelegramActivationManager.checkRemoteStatus(context)
                                         }
@@ -2695,10 +2661,21 @@ fun TvSettingsScreen(
                                 Button(
                                     onClick = {
                                         showUnlinkConfirm = false
-                                        TelegramActivationManager.deactivate(context)
-                                        activationInfo = TelegramActivationManager.getActivationInfo(context)
-                                        Toast.makeText(context, "Sesión cerrada en este dispositivo", Toast.LENGTH_SHORT).show()
-                                        onDeactivated()
+                                        Toast.makeText(context, "Cerrando sesión...", Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch {
+                                            val remoteOk = withContext(Dispatchers.IO) {
+                                                TelegramActivationManager.deactivateRemote(context)
+                                            }
+                                            TelegramActivationManager.deactivate(context)
+                                            activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                            Toast.makeText(
+                                                context,
+                                                if (remoteOk) "Sesión cerrada en este dispositivo"
+                                                else "Sesión cerrada localmente (sin conexión al bot)",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            onDeactivated()
+                                        }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
                                     shape = RoundedCornerShape(10.dp)
@@ -4029,6 +4006,7 @@ fun MichiActivationWallScreen(
                     onClick = {
                         scope.launch {
                             isCheckingWall = true
+                            TelegramActivationManager.clearManualLogout(context)
                             val updated = withContext(Dispatchers.IO) {
                                 TelegramActivationManager.checkRemoteStatus(context)
                             }
@@ -4103,16 +4081,6 @@ fun MichiActivationWallScreen(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
-                
-                Button(
-                    onClick = {
-                        if (TelegramActivationManager.activateFreeTrial(context)) onActivated()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                    modifier = Modifier.border(1.dp, MichiOrange, RoundedCornerShape(12.dp))
-                ) {
-                    Text("Probar 7 dias gratis", color = MichiOrange)
-                }
             }
         }
     }

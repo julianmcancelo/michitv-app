@@ -53,6 +53,7 @@ object TelegramActivationManager {
     private const val KEY_ACTIVATED_AT = "activated_at"
     private const val KEY_EXPIRES_AT = "expires_at"
     private const val KEY_LICENSE_KEY = "license_key"
+    private const val KEY_MANUAL_LOGOUT = "manual_logout"
     private const val KEY_BOT_USERNAME = "bot_username"
     private const val KEY_SERVER_URL = "server_url"
     private const val DEFAULT_BOT = "@MichitvBot"
@@ -93,6 +94,20 @@ object TelegramActivationManager {
         val pin = "%04d".format(1000 + kotlin.math.abs(num))
         prefs.edit().putString(KEY_NUMERIC_PIN, pin).apply()
         return pin
+    }
+
+    fun isManualLogout(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MANUAL_LOGOUT, false)
+    }
+
+    private fun setManualLogout(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_MANUAL_LOGOUT, value).apply()
+    }
+
+    fun clearManualLogout(context: Context) {
+        setManualLogout(context, false)
     }
 
     fun getServerUrl(context: Context): String {
@@ -176,6 +191,7 @@ object TelegramActivationManager {
                         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                             .edit()
                             .putBoolean(KEY_IS_ACTIVATED, true)
+                            .putBoolean(KEY_MANUAL_LOGOUT, false)
                             .putString(KEY_PLAN_NAME, plan)
                             .putString(KEY_TG_USER, tgUser)
                             .putString(KEY_ACTIVATED_AT, nowStr)
@@ -192,6 +208,43 @@ object TelegramActivationManager {
             }
         }
         return null
+    }
+
+    /**
+     * Desvincula el equipo en el servidor del bot para que el cierre de sesión
+     * sea definitivo (si no, el polling lo reactivaría solo al instante).
+     * Retorna true si algún host confirmó la baja.
+     */
+    fun deactivateRemote(context: Context): Boolean {
+        val code = getDeviceCode(context)
+        val userServer = getServerUrl(context)
+        val candidates = listOf(
+            userServer,
+            "http://10.0.2.2:3000",
+            "http://192.168.0.164:3000",
+            "http://192.168.0.148:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3000"
+        ).distinct()
+        for (host in candidates) {
+            try {
+                val url = URL("$host/api/deactivate?device=" + java.net.URLEncoder.encode(code, "UTF-8"))
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 2500
+                    readTimeout = 2500
+                    requestMethod = "GET"
+                    setRequestProperty("Accept", "application/json")
+                }
+                if (conn.responseCode == 200) {
+                    conn.disconnect()
+                    return true
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                // Intentar con el siguiente candidato
+            }
+        }
+        return false
     }
 
     /**
@@ -216,6 +269,7 @@ object TelegramActivationManager {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_IS_ACTIVATED, true)
+                .putBoolean(KEY_MANUAL_LOGOUT, false)
                 .putString(KEY_TG_USER, tgUser)
                 .putString(KEY_PLAN_NAME, "Membresía Premium MichiTV VIP 🐾")
                 .putString(KEY_ACTIVATED_AT, nowStr)
@@ -233,6 +287,7 @@ object TelegramActivationManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_IS_ACTIVATED, true)
+            .putBoolean(KEY_MANUAL_LOGOUT, false)
             .putString(KEY_TG_USER, "Prueba Gratuita MichiTV")
             .putString(KEY_PLAN_NAME, "Prueba VIP de Bienvenida (7 Días) 🎁")
             .putString(KEY_ACTIVATED_AT, nowStr)
@@ -244,6 +299,7 @@ object TelegramActivationManager {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_IS_ACTIVATED, false)
+            .putBoolean(KEY_MANUAL_LOGOUT, true)
             .remove(KEY_TG_USER)
             .putString(KEY_PLAN_NAME, "Plan Gratuito MichiTV")
             .remove(KEY_ACTIVATED_AT)

@@ -23,9 +23,20 @@
     "MICHI-528D": {
       "device_code": "MICHI-528D",
       "license_key": "MICHI-VIP-MICHI528D-O0XE",
-      "activated": true,
+      "activated": false,
       "activated_at": "2026-10-09T02:21:19.811Z",
       "expires_at": "2026-11-08T02:21:19.811Z",
+      "plan": "VIP MichiTV Pass",
+      "tg_user_id": 7995536641,
+      "tg_username": "Jota",
+      "deactivated_at": "2026-10-09T12:05:34.868Z"
+    },
+    "MICHI-84C8": {
+      "device_code": "MICHI-84C8",
+      "license_key": "MICHI-VIP-MICHI84C8-V35D",
+      "activated": true,
+      "activated_at": "2026-10-09T09:17:04.649Z",
+      "expires_at": "2026-11-08T09:17:04.645Z",
       "plan": "VIP MichiTV Pass",
       "tg_user_id": 7995536641,
       "tg_username": "Jota"
@@ -56,7 +67,8 @@
       "devices": [
         "MICHI-E7CB",
         "MICHI-1D68",
-        "MICHI-528D"
+        "MICHI-528D",
+        "MICHI-84C8"
       ]
     }
   },
@@ -64,5 +76,16 @@
     "maintenance": false,
     "maintenance_message": "putoo",
     "maintenance_until": null
+  },
+  "support_tickets": {
+    "0TT4Z2": {
+      "id": "0TT4Z2",
+      "user_chat_id": 7995536641,
+      "user_id": 7995536641,
+      "username": "Jota",
+      "message": "hola",
+      "created_at": "2026-10-09T10:32:10.862Z",
+      "status": "open"
+    }
   }
 }

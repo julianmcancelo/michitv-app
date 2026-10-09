@@ -1395,6 +1395,28 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // Endpoint de desvinculación: desactiva el equipo en el servidor para que
+    // "Cerrar sesión" sea definitivo (si no, el polling lo reactivaría solo).
+    if (url.pathname === '/api/deactivate') {
+        let deviceCode = (url.searchParams.get('device') || '').toUpperCase().trim();
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (!deviceCode.startsWith('MICHI-') && deviceCode.length === 4) {
+            deviceCode = `MICHI-${deviceCode}`;
+        }
+        if (deviceCode && db.devices[deviceCode]) {
+            db.devices[deviceCode].activated = false;
+            db.devices[deviceCode].deactivated_at = new Date().toISOString();
+            saveDB();
+            res.writeHead(200);
+            res.end(JSON.stringify({ success: true, deviceCode: deviceCode, isActivated: false }));
+        } else {
+            res.writeHead(404);
+            res.end(JSON.stringify({ success: false, error: "Dispositivo no encontrado" }));
+        }
+        return;
+    }
+
     // Endpoint de activación directa vía API REST (para auto-pairing instantáneo)
     if (url.pathname === '/api/activate') {
         let deviceCode = (url.searchParams.get('device') || '').toUpperCase().trim();
@@ -1409,8 +1431,8 @@ const server = http.createServer((req, res) => {
             if (db.devices[deviceCode]) {
                 const existingDev = db.devices[deviceCode];
                 const isExpired = new Date(existingDev.expires_at) <= new Date();
-                
-                if (!isExpired) {
+
+                if (!isExpired && existingDev.activated) {
                     res.writeHead(200);
                     res.end(JSON.stringify({
                         success: true,
