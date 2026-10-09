@@ -717,7 +717,7 @@ async function processActivation(chatId, userId, username, rawDeviceCode) {
         activated: true,
         activated_at: new Date().toISOString(),
         expires_at: expires.toISOString(),
-        plan: "VIP MichiTV Pass 🐾",
+        plan: "VIP MichiTV Pass",
         tg_user_id: userId,
         tg_username: username
     };
@@ -1433,7 +1433,7 @@ const server = http.createServer((req, res) => {
                 activated: true,
                 activated_at: new Date().toISOString(),
                 expires_at: expires.toISOString(),
-                plan: "VIP MichiTV Pass (Auto-Pairing) 🐾",
+                plan: "VIP MichiTV Pass (Auto-Pairing)",
                 tg_user_id: 0,
                 tg_username: "Auto-Pairing"
             };
@@ -1444,7 +1444,7 @@ const server = http.createServer((req, res) => {
                 success: true,
                 deviceCode: deviceCode,
                 isActivated: true,
-                planName: "VIP MichiTV Pass (Auto-Pairing) 🐾",
+                planName: "VIP MichiTV Pass (Auto-Pairing)",
                 licenseKey: licenseKey
             }));
         } else {

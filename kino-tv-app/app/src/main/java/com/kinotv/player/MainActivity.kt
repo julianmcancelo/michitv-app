@@ -347,7 +347,12 @@ fun TvSidebar(
                 .background(MichiOrangeGradient),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "🐾", fontSize = 22.sp)
+            Icon(
+                imageVector = Icons.Default.Pets,
+                contentDescription = "MichiTV",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
         }
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -614,7 +619,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                         .fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        MichiBadge(text = "DESTACADO EN MICHITV 🐾", isAccent = true)
+                        MichiBadge(text = "DESTACADO EN MICHITV", isAccent = true)
                         Spacer(modifier = Modifier.width(8.dp))
                         item.rating?.let { r ->
                             MichiBadge(text = "★ ${"%.1f".format(r)} IMDb", isGold = true)
@@ -892,7 +897,7 @@ fun TvSeriesScreen(onOpenItem: (CatalogItem) -> Unit) {
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            text = "Temporadas completas, episodios y especiales para disfrutar en MichiTV 🐾",
+            text = "Temporadas completas, episodios y especiales para disfrutar en MichiTV",
             fontFamily = OutfitFontFamily,
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1090,7 +1095,7 @@ fun TvSearchScreen(onOpenItem: (CatalogItem) -> Unit) {
             .padding(24.dp)
     ) {
         Text(
-            text = "Buscar en MichiTV 🐾",
+            text = "Buscar en MichiTV",
             fontFamily = OutfitFontFamily,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
@@ -1468,11 +1473,7 @@ fun TvSettingsScreen(
             .padding(24.dp)
     ) {
         // --- CABECERA DE AJUSTES ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -1491,13 +1492,15 @@ fun TvSettingsScreen(
                         modifier = Modifier.size(26.dp)
                     )
                 }
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Ajustes de MichiTV",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = OutfitFontFamily,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "Configuración global, apariencia, streaming y actualizaciones",
@@ -1583,7 +1586,8 @@ fun TvSettingsScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Box(
                             modifier = Modifier
@@ -1599,7 +1603,7 @@ fun TvSettingsScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (isDarkTheme) "Modo Cine Oscuro (Recomendado)" else "Modo Claro Activado",
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -1729,7 +1733,7 @@ fun TvSettingsScreen(
                         } else {
                             Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Comprobar Actualizaciones", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                            Text(text = "Comprobar ahora", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                         }
                     }
 
@@ -1887,12 +1891,8 @@ fun TvSettingsScreen(
                 )
         ) {
             Column(modifier = Modifier.padding(22.dp)) {
-                // Cabecera de la sección
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                // Cabecera de la sección (apilada para que nunca se corte en pantallas angostas)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1911,44 +1911,64 @@ fun TvSettingsScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Licencia y Activación MichiTV 🐾",
+                                text = "Licencia y Activación",
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = OutfitFontFamily,
-                                fontSize = 18.sp
+                                fontSize = 18.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Asistente inteligente MichiBot en Telegram (@${rawBotName})",
+                                text = "MichiBot en Telegram (@${rawBotName})",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
-                                fontFamily = OutfitFontFamily
+                                fontFamily = OutfitFontFamily,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.15f)
-                                else Color(0xFFFF9100).copy(alpha = 0.15f)
-                            )
-                            .border(
-                                1.dp,
-                                if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = if (activationInfo.isActivated) "ACTIVO • VIP 👑" else "MODO GRATUITO",
-                            color = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = OutfitFontFamily
-                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.15f)
+                                    else Color(0xFFFF9100).copy(alpha = 0.15f)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (activationInfo.isActivated) Icons.Filled.WorkspacePremium else Icons.Filled.Person,
+                                    contentDescription = null,
+                                    tint = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = if (activationInfo.isActivated) "ACTIVO VIP" else "MODO GRATUITO",
+                                    color = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = OutfitFontFamily
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1963,7 +1983,12 @@ fun TvSettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(text = "🎉", fontSize = 26.sp)
+                                Icon(
+                                    imageVector = Icons.Filled.Celebration,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E676),
+                                    modifier = Modifier.size(26.dp)
+                                )
                                 Text(
                                     text = "¡MichiTV VIP Activado!",
                                     fontFamily = OutfitFontFamily,
@@ -1976,13 +2001,13 @@ fun TvSettingsScreen(
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = "🐾 ¡Miau! Tu dispositivo ha sido verificado con éxito por MichiBot.",
+                                    text = "Tu dispositivo ha sido verificado con éxito por MichiBot.",
                                     fontFamily = OutfitFontFamily,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 14.sp
                                 )
                                 Text(
-                                    text = "👑 Plan: ${activationInfo.planName}",
+                                    text = "Plan: ${activationInfo.planName}",
                                     fontFamily = OutfitFontFamily,
                                     fontWeight = FontWeight.Bold,
                                     color = MichiOrange,
@@ -2002,7 +2027,7 @@ fun TvSettingsScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text(text = "¡Empezar a Disfrutar! 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily)
+                                Text(text = "¡Empezar a Disfrutar!", color = Color.Black, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily)
                             }
                         },
                         containerColor = if (isDarkTheme) MichiDarkSurfaceElevated else MaterialTheme.colorScheme.surface,
@@ -2076,7 +2101,7 @@ fun TvSettingsScreen(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = if (isManualChecking) "Comprobando..." else "🔄 Comprobar Ahora",
+                                text = if (isManualChecking) "Comprobando..." else "Comprobar Ahora",
                                 fontFamily = OutfitFontFamily,
                                 color = MichiOrange,
                                 fontSize = 11.sp,
@@ -2212,7 +2237,12 @@ fun TvSettingsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(text = "🎁", fontSize = 16.sp)
+                            Icon(
+                                imageVector = Icons.Filled.CardGiftcard,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(16.dp)
+                            )
                             Text(
                                 text = "Activar Prueba VIP Gratis de 7 Días (1 Toque)",
                                 color = Color.Black,
@@ -2261,8 +2291,24 @@ fun TvSettingsScreen(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                MichiBadge(text = "📷 ESCANEO RÁPIDO PARA TV", isAccent = true)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.QrCode2,
+                                    contentDescription = null,
+                                    tint = MichiOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "ESCANEO RÁPIDO PARA TV",
+                                    color = MichiOrange,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    fontFamily = OutfitFontFamily,
+                                    letterSpacing = 1.sp
+                                )
                             }
                             Text(
                                 text = "¡Tu TV se activará sola en tiempo real!",
@@ -2274,7 +2320,7 @@ fun TvSettingsScreen(
                             Text(
                                 text = "1. Abre la cámara de tu celular y apunta al código QR.\n" +
                                         "2. Toca el enlace para abrir Telegram con @${rawBotName}.\n" +
-                                        "3. ¡Listo! Esta pantalla se activará automáticamente al instante sin tener que escribir nada con el control remoto. 🍿🐾",
+                                        "3. ¡Listo! Esta pantalla se activará automáticamente al instante sin tener que escribir nada con el control remoto.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 lineHeight = 18.sp,
@@ -2293,8 +2339,24 @@ fun TvSettingsScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            MichiBadge(text = "📱 ACCESO DIRECTO MÓVIL", isAccent = true)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Smartphone,
+                                contentDescription = null,
+                                tint = MichiOrange,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "ACCESO DIRECTO MÓVIL",
+                                color = MichiOrange,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                fontFamily = OutfitFontFamily,
+                                letterSpacing = 1.sp
+                            )
                         }
 
                         Text(
@@ -2334,7 +2396,7 @@ fun TvSettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "🐾 Abrir en Telegram (@$rawBotName)",
+                                text = "Abrir en Telegram (@$rawBotName)",
                                 color = Color.Black,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
@@ -2542,7 +2604,7 @@ fun TvSettingsScreen(
                 fontSize = 11.sp
             )
         }
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(96.dp))
     }
 
     // Diálogo para personalizar dueño y repositorio de GitHub
@@ -2758,7 +2820,7 @@ fun DetailScreen(
                                     isAccent = true
                                 )
                                 MichiBadge(text = "4K ULTRA HD")
-                                MichiBadge(text = "🐾 MICHITV", isGold = true)
+                                MichiBadge(text = "MICHITV", isGold = true)
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
@@ -3017,7 +3079,7 @@ fun DetailScreen(
                                         isAccent = true
                                     )
                                     MichiBadge(text = "4K ULTRA HD")
-                                    MichiBadge(text = "🐾 MICHITV", isGold = true)
+                                    MichiBadge(text = "MICHITV", isGold = true)
                                 }
 
                                 meta.description?.let { desc ->
