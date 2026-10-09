@@ -1,0 +1,10 @@
+{
+  "bot_token": "8955872733:AAFbRGfbBRgjTrIk7Yor8xpu_NxxpIygdk8",
+  "bot_username": "MichitvBot",
+  "admin_ids": [
+    7995536641
+  ],
+  "default_duration_days": 30,
+  "server_port": 3000,
+  "allow_free_trial": true
+}

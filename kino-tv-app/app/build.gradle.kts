@@ -1,4 +1,5 @@
-﻿plugins {
+plugins {
+    id("com.google.devtools.ksp")
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -13,8 +14,8 @@ android {
         applicationId = "com.kinotv.player"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.4.0"
+        versionCode = 5
+        versionName = "1.5.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -56,11 +57,16 @@ android {
 }
 
 dependencies {
+    val room_version = "2.6.1"
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    ksp("androidx.room:room-compiler:$room_version")
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.graphics:graphics-path:1.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
 
@@ -87,6 +93,10 @@ dependencies {
     // QuickJS JavaScript engine for Kino plugins
     implementation("io.github.dokar3:quickjs-kt:1.0.0-alpha13")
 }
+
+
+
+
 
 
 

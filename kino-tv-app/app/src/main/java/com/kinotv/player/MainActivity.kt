@@ -1,5 +1,20 @@
-﻿package com.kinotv.player
+package com.kinotv.player
 
+import com.kinotv.player.data.local.MichiDatabase
+import com.kinotv.player.data.local.MichiDao
+import com.kinotv.player.data.local.WatchlistItem
+import com.kinotv.player.data.local.WatchHistory
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material.icons.filled.Check
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalConfiguration
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -9,7 +24,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.annotation.OptIn
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,10 +89,16 @@ enum class ScreenNav {
     SETTINGS
 }
 
+val LocalMichiDao = staticCompositionLocalOf<MichiDao> { error("No MichiDao provided") }
+
 data class PlayRequest(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
-    val title: String = ""
+    val title: String = "",
+    val item: CatalogItem? = null,
+    val season: Int? = null,
+    val episode: Int? = null,
+    val startPositionMs: Long = 0L
 )
 
 object AppState {
@@ -87,9 +108,13 @@ object AppState {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppState.isDarkTheme.value = ThemePrefs.isDarkMode(this)
+        val database = MichiDatabase.getDatabase(this)
         setContent {
-            MichiTheme {
-                MainAppNavigation()
+            CompositionLocalProvider(LocalMichiDao provides database.michiDao()) {
+                MichiTheme(darkTheme = AppState.isDarkTheme.value) {
+                    MainAppNavigation()
+                }
             }
         }
     }
@@ -107,6 +132,33 @@ fun MainAppNavigation() {
     var availableUpdate by remember { mutableStateOf<ReleaseInfo?>(null) }
     val updateDownloadState by AppUpdateManager.downloadState.collectAsState()
 
+    // --- BLOQUEO DE ACTIVACION OBLIGATORIA ---
+    var activationInfo by remember { mutableStateOf(TelegramActivationManager.getActivationInfo(context)) }
+
+    // Polling reactivo en tiempo real para auto-activacion sin escribir nada
+    LaunchedEffect(activationInfo.isActivated) {
+        if (!activationInfo.isActivated) {
+            while (!activationInfo.isActivated) {
+                kotlinx.coroutines.delay(2500)
+                val updated = withContext(Dispatchers.IO) {
+                    TelegramActivationManager.checkRemoteStatus(context)
+                }
+                if (updated != null && updated.isActivated) {
+                    activationInfo = updated
+                    break
+                }
+            }
+        }
+    }
+
+    if (!activationInfo.isActivated) {
+        MichiActivationWallScreen(
+            activationInfo = activationInfo,
+            onActivated = { activationInfo = TelegramActivationManager.getActivationInfo(context) }
+        )
+        return // Bloquea completamente el acceso a la app
+    }
+
     // Comprobación inteligente en segundo plano si está activado
     LaunchedEffect(Unit) {
         if (AppUpdateManager.isAutoCheckEnabled(context)) {
@@ -122,9 +174,7 @@ fun MainAppNavigation() {
             playingStream = null
         }
         TvPlayerScreen(
-            videoUrl = playingStream!!.url,
-            headers = playingStream!!.headers,
-            title = playingStream!!.title,
+            request = playingStream!!,
             onBack = { playingStream = null }
         )
     } else if (openedItem != null) {
@@ -134,8 +184,8 @@ fun MainAppNavigation() {
         DetailScreen(
             item = openedItem!!,
             onBack = { openedItem = null },
-            onPlay = { url, headers, title ->
-                playingStream = PlayRequest(url, headers, title)
+            onPlay = { request ->
+                playingStream = request
             }
         )
     } else {
@@ -372,6 +422,10 @@ object MediaCache {
 
 @Composable
 fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
+    val dao = LocalMichiDao.current
+    val watchlist by dao.getWatchlist().collectAsState(initial = emptyList<WatchlistItem>())
+    val history by dao.getWatchHistory().collectAsState(initial = emptyList<WatchHistory>())
+
     var selectedItem by remember { mutableStateOf<CatalogItem?>(null) }
     var rows by remember { mutableStateOf(MediaCache.homeRows ?: emptyList()) }
     var isLoading by remember { mutableStateOf(MediaCache.homeRows == null) }
@@ -382,7 +436,6 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
             val allRows = mutableListOf<CatalogRow>()
             val plugins = PluginManager.getInstalledPlugins(context).filter { it.isEnabled }
 
-            // Prioritize real movies/series (latino, fuegocine, etc.) and append others
             val sortedPlugins = plugins.sortedBy { 
                 when (it.id) {
                     "fuegocine" -> 0
@@ -393,26 +446,35 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                 }
             }
 
-            for (plugin in sortedPlugins) {
-                if (plugin.id == "iptv-org") continue // iptv handled in Live screen
-                try {
-                    val pRows = KinoPluginEngine.getHomeRows(context, plugin.id)
-                    if (pRows.isNotEmpty()) allRows.addAll(pRows)
-                    
-                    if (plugin.id == "latino") {
-                        val latinoMovies = KinoPluginEngine.browse(context, "latino", "latest:hackstore:movie")
-                        if (latinoMovies.isNotEmpty()) {
-                            allRows.add(CatalogRow("Películas Latino", latinoMovies))
-                        }
-                        val latinoSeries = KinoPluginEngine.browse(context, "latino", "latest:hackstore:tv")
-                        if (latinoSeries.isNotEmpty()) {
-                            allRows.add(CatalogRow("Series Latino", latinoSeries))
+            // CARGA ULTRA RÁPIDA EN PARALELO
+            val deferredList = sortedPlugins.map { plugin ->
+                async(Dispatchers.IO) {
+                    val pRows = mutableListOf<CatalogRow>()
+                    if (plugin.id != "iptv-org") {
+                        try {
+                            val r = KinoPluginEngine.getHomeRows(context, plugin.id)
+                            if (r.isNotEmpty()) pRows.addAll(r)
+                            
+                            if (plugin.id == "latino") {
+                                val latinoMovies = KinoPluginEngine.browse(context, "latino", "latest:hackstore:movie")
+                                if (latinoMovies.isNotEmpty()) {
+                                    pRows.add(CatalogRow("Películas Latino", latinoMovies))
+                                }
+                                val latinoSeries = KinoPluginEngine.browse(context, "latino", "latest:hackstore:tv")
+                                if (latinoSeries.isNotEmpty()) {
+                                    pRows.add(CatalogRow("Series Latino", latinoSeries))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "Error loading home rows for plugin ${plugin.id}", e)
                         }
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Error loading home rows for plugin ${plugin.id}", e)
+                    pRows
                 }
             }
+
+            val results = deferredList.awaitAll()
+            results.forEach { if (it.isNotEmpty()) allRows.addAll(it) }
 
             // Fallback popular catalogs if everything is empty
             if (allRows.isEmpty()) {
@@ -433,6 +495,48 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
         if (rows.isNotEmpty() && rows[0].items.isNotEmpty() && selectedItem == null) {
             selectedItem = rows[0].items.first()
         }
+    }
+
+    val combinedRows = remember(watchlist, history, rows) {
+        val localRows = mutableListOf<CatalogRow>()
+        if (history.isNotEmpty()) {
+            localRows.add(
+                CatalogRow(
+                    title = "Continuar Viendo",
+                    items = history.map {
+                        CatalogItem(
+                            id = it.id,
+                            name = it.title,
+                            type = it.type ?: "movie",
+                            poster = it.poster,
+                            pluginId = it.pluginId,
+                            ref = it.ref
+                        )
+                    }
+                )
+            )
+        }
+        if (watchlist.isNotEmpty()) {
+            localRows.add(
+                CatalogRow(
+                    title = "Mi Lista",
+                    items = watchlist.map {
+                        CatalogItem(
+                            id = it.id,
+                            name = it.title,
+                            type = it.type ?: "movie",
+                            poster = it.poster,
+                            background = it.background,
+                            description = it.description,
+                            year = it.year,
+                            pluginId = it.pluginId,
+                            ref = it.ref
+                        )
+                    }
+                )
+            )
+        }
+        localRows + rows
     }
 
     Box(
@@ -549,7 +653,7 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
-                    items(rows) { row ->
+                    items(combinedRows) { row ->
                         Column {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1285,12 +1389,32 @@ fun TvSettingsScreen(
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
+    var isDarkTheme by remember { AppState.isDarkTheme }
     var preferredServer by remember { mutableStateOf("Voe (Recomendado)") }
     var preferredLang by remember { mutableStateOf("Español Latino") }
 
     // Activación Telegram
     var activationInfo by remember { mutableStateOf(TelegramActivationManager.getActivationInfo(context)) }
     var inputVoucherKey by remember { mutableStateOf("") }
+    var showCelebrationDialog by remember { mutableStateOf(false) }
+    var isManualChecking by remember { mutableStateOf(false) }
+
+    // Polling reactivo en tiempo real para auto-activación sin escribir nada
+    LaunchedEffect(activationInfo.isActivated) {
+        if (!activationInfo.isActivated) {
+            while (!activationInfo.isActivated) {
+                kotlinx.coroutines.delay(2500)
+                val updated = withContext(Dispatchers.IO) {
+                    TelegramActivationManager.checkRemoteStatus(context)
+                }
+                if (updated != null && updated.isActivated) {
+                    activationInfo = updated
+                    showCelebrationDialog = true
+                    break
+                }
+            }
+        }
+    }
 
     // Actualizaciones OTA
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -1305,314 +1429,232 @@ fun TvSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
+        // --- CABECERA DE AJUSTES ---
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Icon(imageVector = Icons.Filled.Settings, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(32.dp))
-            Column {
-                Text(
-                    text = "Ajustes y Configuración",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = OutfitFontFamily,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Personaliza tu experiencia, vincula con Telegram y mantén MichiTV al día",
-                    fontSize = 13.sp,
-                    fontFamily = OutfitFontFamily,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Brush.linearGradient(listOf(MichiOrange, MichiOrangeDark))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Ajustes de MichiTV",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OutfitFontFamily,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Configuración global, apariencia, streaming y actualizaciones",
+                        fontSize = 13.sp,
+                        fontFamily = OutfitFontFamily,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Badge de Modo Activo
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isDarkTheme) MichiDarkSurfaceElevated else MaterialTheme.colorScheme.surfaceVariant)
+                    .border(1.dp, if (isDarkTheme) MichiDarkBorder else MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                        contentDescription = null,
+                        tint = MichiOrange,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isDarkTheme) "MODO CINE OSCURO" else "MODO CLARO",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        fontFamily = OutfitFontFamily
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // ================= TARJETA 1: ACTIVACIÓN TELEGRAM BOT =================
+        // ================= SECCIÓN 1: APARIENCIA Y TEMA =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(
-                    1.dp,
-                    if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.5f) else Color(0xFFFF9100).copy(alpha = 0.5f),
-                    RoundedCornerShape(16.dp)
-                )
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(22.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.weight(1f, fill = false),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(imageVector = Icons.Filled.Send, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
-                        Text(
-                            text = "Licencia Telegram",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = OutfitFontFamily,
-                            fontSize = 17.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Badge de Estado
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (activationInfo.isActivated)
-                                    Color(0xFF00E676).copy(alpha = 0.15f)
-                                else
-                                    Color(0xFFFF9100).copy(alpha = 0.15f)
-                            )
-                            .border(
-                                1.dp,
-                                if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = if (activationInfo.isActivated) "ACTIVO • VIP" else "MODO GRATUITO",
-                            color = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = OutfitFontFamily,
-                            maxLines = 1
-                        )
-                    }
+                    Icon(imageVector = Icons.Filled.Palette, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(22.dp))
+                    Text(
+                        text = "Apariencia y Visualización",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OutfitFontFamily,
+                        fontSize = 18.sp
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Código del Dispositivo
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Código Único de tu Dispositivo:",
+                    text = "Elige la experiencia visual. El modo cine oscuro está optimizado para contraste OLED y visión nocturna.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontFamily = OutfitFontFamily
                 )
-                Spacer(modifier = Modifier.height(6.dp))
 
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Selector de Tema con Switch Elegante
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.background)
-                        .border(1.dp, MichiCyan.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = activationInfo.deviceCode,
-                        color = MichiCyan,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = OutfitFontFamily,
-                        letterSpacing = 2.sp
-                    )
-
-                    Button(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(activationInfo.deviceCode))
-                            Toast.makeText(context, "¡Código ${activationInfo.deviceCode} copiado!", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MichiCyan.copy(alpha = 0.2f)),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(text = "Copiar", color = MichiCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Pasos de activación con Telegram
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "Cómo activar con el Bot oficial:",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = OutfitFontFamily
-                    )
-                    Text(
-                        text = "1. Abre Telegram y busca ${activationInfo.botUsername}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        fontFamily = OutfitFontFamily
-                    )
-                    Text(
-                        text = "2. Envía el comando: /activar ${activationInfo.deviceCode}",
-                        color = MichiOrange,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = OutfitFontFamily
-                    )
-                    Text(
-                        text = "3. O ingresa abajo la clave provista por el bot:",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        fontFamily = OutfitFontFamily
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Input para voucher o clave manual
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = inputVoucherKey,
-                        onValueChange = { inputVoucherKey = it },
-                        placeholder = { Text("Clave / Voucher (ej. MICHI-VIP-2026)", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MichiOrange,
-                            unfocusedBorderColor = MichiBorder,
-                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            if (inputVoucherKey.isNotBlank()) {
-                                val success = TelegramActivationManager.activateWithKey(context, inputVoucherKey)
-                                if (success) {
-                                    activationInfo = TelegramActivationManager.getActivationInfo(context)
-                                    inputVoucherKey = ""
-                                    Toast.makeText(context, "¡Dispositivo Activado con Éxito!", Toast.LENGTH_LONG).show()
-                                } else {
-                                    Toast.makeText(context, "Clave no válida. Verifica con el bot.", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
-                    ) {
-                        Text(text = "Activar", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                }
-
-                if (activationInfo.isActivated) {
-                    Spacer(modifier = Modifier.height(12.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = "Plan: ${activationInfo.planName} • Activado: ${activationInfo.activatedAt ?: "Reciente"}",
-                            color = Color(0xFF00E676),
-                            fontSize = 12.sp,
-                            fontFamily = OutfitFontFamily
-                        )
-
-                        TextButton(
-                            onClick = {
-                                TelegramActivationManager.deactivate(context)
-                                activationInfo = TelegramActivationManager.getActivationInfo(context)
-                                Toast.makeText(context, "Dispositivo desvinculado", Toast.LENGTH_SHORT).show()
-                            }
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (isDarkTheme) Color(0xFF0F111A) else Color(0xFFFFFFFF)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "Desvincular", color = Color.Red.copy(alpha = 0.8f), fontSize = 12.sp)
+                            Icon(
+                                imageVector = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                                contentDescription = null,
+                                tint = MichiOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = if (isDarkTheme) "Modo Cine Oscuro (Recomendado)" else "Modo Claro Activado",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                            Text(
+                                text = if (isDarkTheme) "Fondo obsidian ultra profundo con acentos neón" else "Fondo claro con textos oscuros",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontFamily = OutfitFontFamily
+                            )
                         }
                     }
+
+                    Switch(
+                        checked = isDarkTheme,
+                        onCheckedChange = { checked ->
+                            isDarkTheme = checked
+                            ThemePrefs.setDarkMode(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = MichiOrange,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ================= TARJETA 2: ACTUALIZACIONES GITHUB RELEASES OTA =================
+        // ================= SECCIÓN 2: ACTUALIZACIONES OTA (GITHUB RELEASES) =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, MichiBorder, RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(22.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.weight(1f, fill = false),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(imageVector = Icons.Filled.Build, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+                        Icon(imageVector = Icons.Filled.SystemUpdate, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(22.dp))
                         Text(
                             text = "Actualizaciones OTA",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
                             fontFamily = OutfitFontFamily,
-                            fontSize = 17.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontSize = 18.sp
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
 
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .background(MichiCyan.copy(alpha = 0.15f))
+                            .border(1.dp, MichiCyan.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Text(
-                            text = "v${AppUpdateManager.getCurrentVersionName(context)}",
+                            text = "v${AppUpdateManager.getCurrentVersionName(context)} • AL DÍA",
                             color = MichiCyan,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = OutfitFontFamily,
-                            maxLines = 1
+                            fontFamily = OutfitFontFamily
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Comprueba e instala las últimas mejoras, parches de seguridad y nuevos plugins automáticamente desde el repositorio de GitHub.",
+                    text = "MichiTV descarga e instala parches, nuevos scrapers y mejoras directamente desde GitHub Releases.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     fontFamily = OutfitFontFamily
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
@@ -1626,7 +1668,7 @@ fun TvSettingsScreen(
                                 } else {
                                     Toast.makeText(
                                         context,
-                                        "¡MichiTV está actualizado (v${AppUpdateManager.getCurrentVersionName(context)})!",
+                                        "¡MichiTV está actualizado a la última versión (v${AppUpdateManager.getCurrentVersionName(context)})!",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
@@ -1634,8 +1676,9 @@ fun TvSettingsScreen(
                         },
                         enabled = !isCheckingUpdate,
                         colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1.3f),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
                     ) {
                         if (isCheckingUpdate) {
                             CircularProgressIndicator(
@@ -1643,21 +1686,24 @@ fun TvSettingsScreen(
                                 color = Color.Black,
                                 strokeWidth = 2.dp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "Buscando...", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Buscando...", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         } else {
-                            Text(text = "Buscar Actualizaciones", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Comprobar Actualizaciones", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                         }
                     }
 
                     OutlinedButton(
                         onClick = { showGhConfigDialog = true },
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MichiBorder),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(0.7f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
                     ) {
                         Text(
-                            text = "Repo: $ghOwner/$ghRepo",
+                            text = "Repo GitHub",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -1666,10 +1712,14 @@ fun TvSettingsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1677,8 +1727,10 @@ fun TvSettingsScreen(
                         text = "Buscar actualizaciones automáticamente al iniciar",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.sp,
-                        fontFamily = OutfitFontFamily
+                        fontFamily = OutfitFontFamily,
+                        modifier = Modifier.weight(1f)
                     )
+                    Spacer(modifier = Modifier.width(10.dp))
                     Switch(
                         checked = autoCheckEnabled,
                         onCheckedChange = { checked ->
@@ -1696,16 +1748,38 @@ fun TvSettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // ================= TARJETA 3: PREFERENCIAS DE REPRODUCTOR =================
+        // ================= SECCIÓN 3: REPRODUCTOR Y STREAMING =================
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, MichiBorder, RoundedCornerShape(16.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(text = "Preferencias de Audio y Subtítulos", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
+            Column(modifier = Modifier.padding(22.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.PlayCircle, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(22.dp))
+                    Text(
+                        text = "Preferencias de Reproducción",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OutfitFontFamily,
+                        fontSize = 18.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Ajusta las opciones por defecto para pistas de audio, doblaje y servidores de extracción.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontFamily = OutfitFontFamily
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = "Idioma de Audio Preferido", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, fontFamily = OutfitFontFamily)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val langs = listOf("Español Latino", "Castellano", "Subtitulado")
@@ -1718,8 +1792,8 @@ fun TvSettingsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-                Text(text = "Servidor de Video Preferido", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp, fontFamily = OutfitFontFamily)
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(text = "Servidor de Video Predilecto", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, fontFamily = OutfitFontFamily)
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val servers = listOf("Voe (Recomendado)", "FuegoCine Direct", "StreamWish")
@@ -1732,13 +1806,674 @@ fun TvSettingsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                    Text(
+                        text = "Reanudación automática (Continuar Viendo) activa con base de datos local Room.",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = OutfitFontFamily
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ================= SECCIÓN 4: ACTIVACIÓN Y LICENCIA TELEGRAM =================
+        val isMobile = LocalConfiguration.current.screenWidthDp < 650
+        val rawBotName = activationInfo.botUsername.removePrefix("@")
+        val telegramDeepLink = "https://t.me/$rawBotName?start=activar_${activationInfo.deviceCode}"
+        val qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=" +
+                java.net.URLEncoder.encode(telegramDeepLink, "UTF-8") + "&margin=12"
+        var showQrOnMobile by remember { mutableStateOf(false) }
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    1.dp,
+                    if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.5f) else MichiOrange.copy(alpha = 0.5f),
+                    RoundedCornerShape(18.dp)
+                )
+        ) {
+            Column(modifier = Modifier.padding(22.dp)) {
+                // Cabecera de la sección
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.15f) else MichiOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.VpnKey,
+                                contentDescription = null,
+                                tint = if (activationInfo.isActivated) Color(0xFF00E676) else MichiOrange,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Licencia y Activación MichiTV 🐾",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = OutfitFontFamily,
+                                fontSize = 18.sp
+                            )
+                            Text(
+                                text = "Asistente inteligente MichiBot en Telegram (@${rawBotName})",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (activationInfo.isActivated) Color(0xFF00E676).copy(alpha = 0.15f)
+                                else Color(0xFFFF9100).copy(alpha = 0.15f)
+                            )
+                            .border(
+                                1.dp,
+                                if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = if (activationInfo.isActivated) "ACTIVO • VIP 👑" else "MODO GRATUITO",
+                            color = if (activationInfo.isActivated) Color(0xFF00E676) else Color(0xFFFF9100),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = OutfitFontFamily
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Diálogo de Celebración VIP
+                if (showCelebrationDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCelebrationDialog = false },
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(text = "🎉", fontSize = 26.sp)
+                                Text(
+                                    text = "¡MichiTV VIP Activado!",
+                                    fontFamily = OutfitFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00E676),
+                                    fontSize = 20.sp
+                                )
+                            }
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "🐾 ¡Miau! Tu dispositivo ha sido verificado con éxito por MichiBot.",
+                                    fontFamily = OutfitFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "👑 Plan: ${activationInfo.planName}",
+                                    fontFamily = OutfitFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MichiOrange,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "¡Ya tienes acceso completo e ilimitado a todo el catálogo en 4K UHD, scrapers rápidos y sin cortes!",
+                                    fontFamily = OutfitFontFamily,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = { showCelebrationDialog = false },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(text = "¡Empezar a Disfrutar! 🚀", color = Color.Black, fontWeight = FontWeight.Bold, fontFamily = OutfitFontFamily)
+                            }
+                        },
+                        containerColor = if (isDarkTheme) MichiDarkSurfaceElevated else MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                }
+
+                // Indicador de Escaneo en Vivo
+                if (!activationInfo.isActivated) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MichiCyan.copy(alpha = 0.12f))
+                            .border(1.dp, MichiCyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                            val alpha by infiniteTransition.animateFloat(
+                                initialValue = 0.25f,
+                                targetValue = 1.0f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(700, easing = LinearEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "pulse_alpha"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00E676).copy(alpha = alpha))
+                            )
+                            Text(
+                                text = "ESPERANDO ACTIVACIÓN EN VIVO...",
+                                fontFamily = OutfitFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = MichiCyan,
+                                fontSize = 11.sp,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isManualChecking = true
+                                    val res = withContext(Dispatchers.IO) {
+                                        TelegramActivationManager.checkRemoteStatus(context)
+                                    }
+                                    isManualChecking = false
+                                    if (res != null && res.isActivated) {
+                                        activationInfo = res
+                                        showCelebrationDialog = true
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "Aún no activado en @$rawBotName. Escanea el QR o usa el botón.",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            },
+                            enabled = !isManualChecking,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (isManualChecking) "Comprobando..." else "🔄 Comprobar Ahora",
+                                fontFamily = OutfitFontFamily,
+                                color = MichiOrange,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+
+                // Tarjetas de Identificación: Código de Dispositivo y PIN TV
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Tarjeta Código de Dispositivo
+                    Column(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MichiCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "CÓDIGO DISPOSITIVO",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = OutfitFontFamily,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = activationInfo.deviceCode,
+                                color = MichiCyan,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = OutfitFontFamily,
+                                letterSpacing = 1.5.sp
+                            )
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(activationInfo.deviceCode))
+                                    Toast.makeText(context, "¡Código copiado al portapapeles!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ContentCopy,
+                                    contentDescription = "Copiar código",
+                                    tint = MichiCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Tarjeta PIN Numérico ultracorto
+                    Column(
+                        modifier = Modifier
+                            .weight(0.9f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MichiOrange.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "PIN RÁPIDO (TV)",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = OutfitFontFamily,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = activationInfo.numericPin,
+                                color = MichiOrange,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = OutfitFontFamily,
+                                letterSpacing = 3.sp
+                            )
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(activationInfo.numericPin))
+                                    Toast.makeText(context, "¡PIN copiado al portapapeles!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ContentCopy,
+                                    contentDescription = "Copiar PIN",
+                                    tint = MichiOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Botón Prueba VIP Gratis de 7 Días (1 Toque)
+                if (!activationInfo.isActivated) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            val ok = TelegramActivationManager.activateFreeTrial(context)
+                            if (ok) {
+                                activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                showCelebrationDialog = true
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFFB300)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(text = "🎁", fontSize = 16.sp)
+                            Text(
+                                text = "Activar Prueba VIP Gratis de 7 Días (1 Toque)",
+                                color = Color.Black,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontFamily = OutfitFontFamily,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // ============ ADAPTACIÓN TV vs MÓVIL ============
+                if (!isMobile) {
+                    // MODO SMART TV: Tarjeta con Código QR para escanear con el móvil
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // QR Code renderizado
+                        Box(
+                            modifier = Modifier
+                                .size(170.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White)
+                                .padding(6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = qrCodeUrl,
+                                contentDescription = "Código QR de Activación con @$rawBotName",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+
+                        // Instrucciones paso a paso en TV
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                MichiBadge(text = "📷 ESCANEO RÁPIDO PARA TV", isAccent = true)
+                            }
+                            Text(
+                                text = "¡Tu TV se activará sola en tiempo real!",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                            Text(
+                                text = "1. Abre la cámara de tu celular y apunta al código QR.\n" +
+                                        "2. Toca el enlace para abrir Telegram con @${rawBotName}.\n" +
+                                        "3. ¡Listo! Esta pantalla se activará automáticamente al instante sin tener que escribir nada con el control remoto. 🍿🐾",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+                    }
+                } else {
+                    // MODO CELULAR: Acceso Directo de un toque al chat de Telegram
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, MichiCyan.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            MichiBadge(text = "📱 ACCESO DIRECTO MÓVIL", isAccent = true)
+                        }
+
+                        Text(
+                            text = "Activación instantánea en tu teléfono",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            fontFamily = OutfitFontFamily
+                        )
+
+                        Text(
+                            text = "Toca el botón para abrir Telegram directamente. Al iniciar el bot con tu código, ¡la app se activará de inmediato!",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontFamily = OutfitFontFamily
+                        )
+
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(telegramDeepLink))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "No se pudo abrir Telegram. Abre @$rawBotName manualmente.", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(vertical = 12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Send,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "🐾 Abrir en Telegram (@$rawBotName)",
+                                color = Color.Black,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+
+                        // Opción para mostrar QR en caso de querer escanearlo desde otro dispositivo
+                        TextButton(
+                            onClick = { showQrOnMobile = !showQrOnMobile },
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Text(
+                                text = if (showQrOnMobile) "Ocultar Código QR" else "Mostrar Código QR (para escanear con otro equipo)",
+                                color = MichiOrange,
+                                fontSize = 12.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+
+                        if (showQrOnMobile) {
+                            Box(
+                                modifier = Modifier
+                                    .size(180.dp)
+                                    .align(Alignment.CenterHorizontally)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White)
+                                    .padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = qrCodeUrl,
+                                    contentDescription = "Código QR",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Canje de Clave / Voucher
+                Text(
+                    text = "O ingresa tu PIN, voucher o clave de activación:",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontFamily = OutfitFontFamily
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = inputVoucherKey,
+                        onValueChange = { inputVoucherKey = it },
+                        placeholder = { Text("PIN (${activationInfo.numericPin}), Voucher o Clave", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MichiOrange,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Button(
+                        onClick = {
+                            if (inputVoucherKey.isNotBlank()) {
+                                val success = TelegramActivationManager.activateWithKey(context, inputVoucherKey)
+                                if (success) {
+                                    activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                    inputVoucherKey = ""
+                                    showCelebrationDialog = true
+                                } else {
+                                    Toast.makeText(context, "Clave o PIN no válido. Verifica con @$rawBotName", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Text(text = "Activar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
+                if (activationInfo.isActivated) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF00E676).copy(alpha = 0.1f))
+                            .border(1.dp, Color(0xFF00E676).copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Suscripción: ${activationInfo.planName}",
+                                color = Color(0xFF00E676),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                            Text(
+                                text = "Activado: ${activationInfo.activatedAt ?: "Reciente"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                TelegramActivationManager.deactivate(context)
+                                activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                Toast.makeText(context, "Dispositivo desvinculado", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(text = "Desvincular", color = Color.Red.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ================= SECCIÓN 5: ALMACENAMIENTO Y MANTENIMIENTO =================
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(18.dp))
+        ) {
+            Column(modifier = Modifier.padding(22.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.DeleteSweep, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(22.dp))
+                    Text(
+                        text = "Almacenamiento y Rendimiento",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = OutfitFontFamily,
+                        fontSize = 18.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Limpia la memoria caché temporal de video y carátulas si experimentas lentitud.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontFamily = OutfitFontFamily
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 MichiButton(
-                    text = "Limpiar Caché de Plugins y Reproductor",
+                    text = "Limpiar Caché y Reiniciar Memoria",
+                    icon = Icons.Filled.DeleteSweep,
                     onClick = {
                         try {
                             context.cacheDir.deleteRecursively()
-                            Toast.makeText(context, "Caché limpiada con éxito", Toast.LENGTH_SHORT).show()
+                            MediaCache.clear()
+                            Toast.makeText(context, "¡Caché liberada y memoria optimizada!", Toast.LENGTH_SHORT).show()
                         } catch (e: Exception) {
                             Toast.makeText(context, "Caché limpiada", Toast.LENGTH_SHORT).show()
                         }
@@ -1747,16 +2482,29 @@ fun TvSettingsScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // Pie de Página Elegante
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "MichiTV Cinema OS • v${AppUpdateManager.getCurrentVersionName(context)}",
+                fontFamily = OutfitFontFamily,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Desarrollado con Jetpack Compose • ExoPlayer Media3 • QuickJS Engine • Room 2.6",
+                fontFamily = OutfitFontFamily,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "MichiTV v${AppUpdateManager.getCurrentVersionName(context)} • Sistema de Streaming Inteligente • Motor QuickJS & ExoPlayer Media3",
-            fontFamily = OutfitFontFamily,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(20.dp))
     }
 
     // Diálogo para personalizar dueño y repositorio de GitHub
@@ -1830,8 +2578,11 @@ fun TvSettingsScreen(
 fun DetailScreen(
     item: CatalogItem,
     onBack: () -> Unit,
-    onPlay: (url: String, headers: Map<String, String>, title: String) -> Unit
+    onPlay: (request: PlayRequest) -> Unit
 ) {
+    val dao = LocalMichiDao.current
+    val history by dao.getWatchHistory().collectAsState(initial = emptyList<WatchHistory>())
+    val isInList by dao.isInWatchlist(item.id).collectAsState(initial = false)
     val initialMeta = remember(item.id) {
         if (!item.pluginId.isNullOrEmpty() || !item.description.isNullOrEmpty()) {
             DetailMeta(
@@ -1995,7 +2746,8 @@ fun DetailScreen(
                                                 }
                                                 resolvingStream = false
                                                 if (resolved != null && resolved.url.isNotBlank()) {
-                                                    onPlay(resolved.url, resolved.headers, meta.name)
+                                                    val startMs = history.find { it.id == item.id }?.progressMs ?: 0L
+                                                    onPlay(PlayRequest(resolved.url, resolved.headers, meta.name, item, null, null, startMs))
                                                 } else {
                                                     Toast.makeText(context, "No se encontró un stream activo para este título.", Toast.LENGTH_LONG).show()
                                                 }
@@ -2004,6 +2756,35 @@ fun DetailScreen(
                                     )
                                 }
                             }
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        MichiButton(
+                                            text = if (isInList) "En Mi Lista" else "+ Mi Lista",
+                                            icon = if (isInList) Icons.Default.Check else Icons.Default.Add,
+                                            isPrimary = isInList,
+                                            onClick = {
+                                                scope.launch {
+                                                    if (isInList) {
+                                                        dao.removeFromWatchlistById(item.id)
+                                                        Toast.makeText(context, "Eliminado de Mi Lista", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        dao.addToWatchlist(
+                                                            WatchlistItem(
+                                                                id = item.id,
+                                                                title = meta.name,
+                                                                poster = meta.poster ?: item.poster,
+                                                                type = meta.type,
+                                                                pluginId = item.pluginId ?: "",
+                                                                ref = item.ref ?: "",
+                                                                background = meta.background ?: item.background,
+                                                                year = meta.year,
+                                                                description = meta.description
+                                                            )
+                                                        )
+                                                        Toast.makeText(context, "Agregado a Mi Lista", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        )
 
                             Spacer(modifier = Modifier.height(10.dp))
                             Row(
@@ -2011,10 +2792,33 @@ fun DetailScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 MichiButton(
-                                    text = "🐾 Mi Lista",
-                                    icon = Icons.Default.Add,
+                                    text = if (isInList) "En Mi Lista" else "Mi Lista",
+                                    icon = if (isInList) Icons.Default.Check else Icons.Default.Add,
+                                    isPrimary = isInList,
                                     modifier = Modifier.weight(1f),
-                                    onClick = { }
+                                    onClick = {
+                                        scope.launch {
+                                            if (isInList) {
+                                                dao.removeFromWatchlistById(item.id)
+                                                Toast.makeText(context, "Eliminado de Mi Lista", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                dao.addToWatchlist(
+                                                    WatchlistItem(
+                                                        id = item.id,
+                                                        title = meta.name,
+                                                        poster = meta.poster ?: item.poster,
+                                                        type = meta.type,
+                                                        pluginId = item.pluginId ?: "",
+                                                        ref = item.ref ?: "",
+                                                        background = meta.background ?: item.background,
+                                                        year = meta.year,
+                                                        description = meta.description
+                                                    )
+                                                )
+                                                Toast.makeText(context, "Agregado a Mi Lista", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
                                 )
                                 MichiButton(
                                     text = "Compartir",
@@ -2075,7 +2879,8 @@ fun DetailScreen(
                                                     resolvingStream = false
                                                     val epTitle = "${meta.name} - T${ep.season} E${ep.number}: ${ep.name ?: ""}"
                                                     if (resolved != null && resolved.url.isNotBlank()) {
-                                                        onPlay(resolved.url, resolved.headers, epTitle)
+                                                        val startMs = history.find { it.id == item.id && it.seasonNumber == ep.season && it.episodeNumber == ep.number }?.progressMs ?: 0L
+                                                                onPlay(PlayRequest(resolved.url, resolved.headers, epTitle, item, ep.season, ep.number, startMs))
                                                     } else {
                                                         Toast.makeText(context, "No se encontró stream para este episodio.", Toast.LENGTH_LONG).show()
                                                     }
@@ -2201,7 +3006,8 @@ fun DetailScreen(
                                                     }
                                                     resolvingStream = false
                                                     if (resolved != null && resolved.url.isNotBlank()) {
-                                                        onPlay(resolved.url, resolved.headers, meta.name)
+                                                        val startMs = history.find { it.id == item.id }?.progressMs ?: 0L
+                                                    onPlay(PlayRequest(resolved.url, resolved.headers, meta.name, item, null, null, startMs))
                                                     } else {
                                                         Toast.makeText(context, "No se encontró un stream activo para este título.", Toast.LENGTH_LONG).show()
                                                     }
@@ -2234,7 +3040,8 @@ fun DetailScreen(
                                                             resolvingStream = false
                                                             val epTitle = "${meta.name} - T${ep.season} E${ep.number}: ${ep.name ?: ""}"
                                                             if (resolved != null && resolved.url.isNotBlank()) {
-                                                                onPlay(resolved.url, resolved.headers, epTitle)
+                                                                val startMs = history.find { it.id == item.id && it.seasonNumber == ep.season && it.episodeNumber == ep.number }?.progressMs ?: 0L
+                                                                onPlay(PlayRequest(resolved.url, resolved.headers, epTitle, item, ep.season, ep.number, startMs))
                                                             } else {
                                                                 Toast.makeText(context, "No se encontró stream para este episodio.", Toast.LENGTH_LONG).show()
                                                             }
@@ -2257,14 +3064,17 @@ fun DetailScreen(
 @OptIn(UnstableApi::class)
 @Composable
 fun TvPlayerScreen(
-    videoUrl: String,
-    headers: Map<String, String> = emptyMap(),
-    title: String,
+    request: PlayRequest,
     onBack: () -> Unit
 ) {
+    val videoUrl = request.url
+    val headers = request.headers
+    val title = request.title
+
     val context = LocalContext.current
     var isBuffering by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val dao = LocalMichiDao.current
 
     val exoPlayer = remember(videoUrl) {
         val okHttpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(NetworkHelper.okHttpClient)
@@ -2296,9 +3106,40 @@ fun TvPlayerScreen(
             .build().apply {
                 val mediaItem = MediaItem.fromUri(videoUrl)
                 setMediaItem(mediaItem)
+                if (request.startPositionMs > 0) {
+                    seekTo(request.startPositionMs)
+                }
                 prepare()
                 playWhenReady = true
             }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            if (exoPlayer.isPlaying && exoPlayer.duration > 0 && request.item != null) {
+                val progress = exoPlayer.currentPosition
+                val duration = exoPlayer.duration
+                val percentage = progress.toFloat() / duration
+                if (percentage > 0.02 && percentage < 0.98) {
+                    dao.saveWatchHistory(
+                        WatchHistory(
+                            id = request.item.id,
+                            title = request.item.name,
+                            poster = request.item.poster,
+                            type = request.item.type,
+                            pluginId = request.item.pluginId ?: "",
+                            ref = request.item.ref ?: "",
+                            progressMs = progress,
+                            durationMs = duration,
+                            seasonNumber = request.season,
+                            episodeNumber = request.episode,
+                            episodeTitle = request.title
+                        )
+                    )
+                }
+            }
+        }
     }
 
     DisposableEffect(exoPlayer) {
@@ -2505,3 +3346,144 @@ fun TvEpisodeCard(
 
 
 
+@Composable
+fun MichiActivationWallScreen(
+    activationInfo: TelegramActivationInfo,
+    onActivated: () -> Unit
+) {
+    val context = LocalContext.current
+    var inputKey by remember { mutableStateOf("") }
+    val isMobile = LocalConfiguration.current.screenWidthDp < 650
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF0F111A)) // Dark OLED background
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth(if (isMobile) 1f else 0.75f)
+                .border(2.dp, MichiOrange.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(imageVector = Icons.Filled.VpnKey, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(48.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "�Dispositivo No Activado!",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Para disfrutar de MichiTV, vincula esta pantalla a tu cuenta.",
+                    color = Color.LightGray,
+                    textAlign = TextAlign.Center,
+                    fontSize = 14.sp
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                val rawBotName = activationInfo.botUsername.removePrefix("@")
+
+                if (isMobile) {
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=${rawBotName}&start=activar_${activationInfo.deviceCode}"))
+                            try {
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"))
+                                context.startActivity(webIntent)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2CA5E0)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Abrir en Telegram (Auto-Activaci�n)", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    // TV QR
+                    val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"
+                    AsyncImage(
+                        model = qrUrl,
+                        contentDescription = "QR Code",
+                        modifier = Modifier
+                            .size(180.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .padding(8.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Escanea el QR con tu tel�fono", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("O busca @${rawBotName} en Telegram y env�a el c�digo:", color = Color.Gray, fontSize = 12.sp)
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.1f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("C�DIGO TV: ", color = Color.LightGray, fontSize = 14.sp)
+                    Text(activationInfo.deviceCode, color = MichiOrange, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                // Manual Entry
+                OutlinedTextField(
+                    value = inputKey,
+                    onValueChange = { inputKey = it },
+                    placeholder = { Text("PIN Num�rico o Voucher") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MichiOrange,
+                        unfocusedBorderColor = Color.Gray,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        Button(
+                            onClick = {
+                                val ok = TelegramActivationManager.activateWithKey(context, inputKey)
+                                if (ok) onActivated() else Toast.makeText(context, "Clave inv�lida", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Validar")
+                        }
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Button(
+                    onClick = {
+                        if (TelegramActivationManager.activateFreeTrial(context)) onActivated()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    modifier = Modifier.border(1.dp, MichiOrange, RoundedCornerShape(12.dp))
+                ) {
+                    Text("Probar 7 D�as Gratis ??", color = MichiOrange)
+                }
+            }
+        }
+    }
+}

@@ -1,4 +1,6 @@
-package com.kinotv.player.ui.components
+﻿package com.kinotv.player.ui.components
+
+import androidx.compose.material3.MaterialTheme
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -94,7 +96,7 @@ fun MichiUpdateModal(
                                 Icon(
                                     imageVector = Icons.Default.SystemUpdate,
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -105,13 +107,13 @@ fun MichiUpdateModal(
                                     fontFamily = OutfitFontFamily,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
                                     text = "Actualización oficial desde GitHub",
                                     fontFamily = OutfitFontFamily,
                                     fontSize = 12.sp,
-                                    color = MichiTextSecondary
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -138,7 +140,7 @@ fun MichiUpdateModal(
                             fontFamily = OutfitFontFamily,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
-                            color = Color.White
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         if (releaseInfo.apkSize > 0) {
                             val mbSize = "%.1f MB".format(releaseInfo.apkSize / (1024.0 * 1024.0))
@@ -222,7 +224,7 @@ fun MichiUpdateModal(
                                         fontFamily = OutfitFontFamily,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -308,3 +310,5 @@ fun MichiUpdateModal(
         }
     }
 }
+
+

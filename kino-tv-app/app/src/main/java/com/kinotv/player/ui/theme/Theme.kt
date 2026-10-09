@@ -42,7 +42,7 @@ private val MichiLightColorScheme = lightColorScheme(
 
 @Composable
 fun MichiTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) MichiDarkColorScheme else MichiLightColorScheme

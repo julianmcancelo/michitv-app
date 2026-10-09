@@ -1,4 +1,6 @@
-package com.kinotv.player.ui.components
+﻿package com.kinotv.player.ui.components
+
+import androidx.compose.material3.MaterialTheme
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -60,8 +62,8 @@ fun MichiButton(
     }
 
     val borderColor = when {
-        isFocused -> Color.White
-        !isPrimary -> MichiBorder
+        isFocused -> MaterialTheme.colorScheme.onSurface
+        !isPrimary -> MaterialTheme.colorScheme.outline
         else -> Color.Transparent
     }
 
@@ -79,7 +81,7 @@ fun MichiButton(
                     )
                 } else {
                     Modifier.background(
-                        if (isFocused) MichiSurfaceElevated else MichiSurface
+                        if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
                     )
                 }
             )
@@ -97,14 +99,14 @@ fun MichiButton(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isPrimary) Color.White else MichiOrange,
+                    tint = if (isPrimary) MaterialTheme.colorScheme.onSurface else MichiOrange,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Text(
                 text = text,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
@@ -120,7 +122,7 @@ fun MichiIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
-    tint: Color = Color.White,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
     backgroundColor: Color = Color(0x66181C26),
     size: Dp = 42.dp
 ) {
@@ -140,7 +142,7 @@ fun MichiIconButton(
             .background(if (isFocused) MichiOrange else backgroundColor)
             .border(
                 1.dp,
-                if (isFocused) Color.White else Color(0x33FFFFFF),
+                if (isFocused) MaterialTheme.colorScheme.onSurface else Color(0x33FFFFFF),
                 CircleShape
             )
             .focusable(interactionSource = interactionSource)
@@ -150,7 +152,7 @@ fun MichiIconButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isFocused) Color.White else tint,
+            tint = if (isFocused) MaterialTheme.colorScheme.onSurface else tint,
             modifier = Modifier.size(size * 0.5f)
         )
     }
@@ -171,7 +173,7 @@ fun MichiBadge(
     val textColor = when {
         isGold -> MichiGold
         isAccent -> MichiOrangeLight
-        else -> MichiTextSecondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val borderColor = when {
         isGold -> Color(0x66FFB300)
@@ -209,14 +211,14 @@ fun MichiChip(
 
     val bgColor = when {
         isSelected -> MichiOrange
-        isFocused -> MichiSurfaceElevated
-        else -> MichiSurface
+        isFocused -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surface
     }
 
     val borderColor = when {
-        isFocused -> Color.White
+        isFocused -> MaterialTheme.colorScheme.onSurface
         isSelected -> MichiOrangeBright
-        else -> MichiBorder
+        else -> MaterialTheme.colorScheme.outline
     }
 
     Box(
@@ -231,7 +233,7 @@ fun MichiChip(
     ) {
         Text(
             text = text,
-            color = if (isSelected || isFocused) Color.White else MichiTextSecondary,
+            color = if (isSelected || isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             fontFamily = OutfitFontFamily,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
             fontSize = 13.sp
@@ -281,7 +283,7 @@ fun MichiMovieCard(
             modifier = Modifier
                 .width(cardWidth)
                 .height(cardHeight)
-                .background(MichiCardBackground)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             AsyncImage(
                 model = item.poster ?: item.background,
@@ -329,10 +331,7 @@ fun MichiMovieCard(
                         .background(Color(0xBB08090D))
                         .padding(4.dp)
                 ) {
-                    Text(
-                        text = "🐾",
-                        fontSize = 11.sp
-                    )
+                    Icon(imageVector = Icons.Default.Pets, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
                 }
             }
 
@@ -348,7 +347,7 @@ fun MichiMovieCard(
             ) {
                 Text(
                     text = typeLabel,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontFamily = OutfitFontFamily,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
@@ -363,7 +362,7 @@ fun MichiMovieCard(
             fontFamily = OutfitFontFamily,
             fontSize = 12.sp,
             fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
-            color = if (isFocused) Color.White else MichiTextSecondary,
+            color = if (isFocused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp, bottom = 4.dp)
@@ -380,7 +379,7 @@ fun MichiTopBar(
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(MichiBackground)
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
@@ -388,7 +387,7 @@ fun MichiTopBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Michi",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 24.sp,
@@ -403,10 +402,7 @@ fun MichiTopBar(
                 letterSpacing = (-0.5).sp
             )
             Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = "🐾",
-                fontSize = 18.sp
-            )
+            Icon(imageVector = Icons.Default.Pets, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(18.dp))
         }
 
         Row(
@@ -417,7 +413,7 @@ fun MichiTopBar(
                 icon = Icons.Default.Search,
                 onClick = onSearchClick,
                 size = 36.dp,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onSurface,
                 backgroundColor = Color(0x22FFFFFF)
             )
 
@@ -427,10 +423,10 @@ fun MichiTopBar(
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(MichiOrangeGradient)
-                    .border(1.5.dp, Color.White, CircleShape),
+                    .border(1.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "🐱", fontSize = 18.sp)
+                Icon(imageVector = Icons.Default.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -454,8 +450,8 @@ fun MichiBottomNav(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp)
-            .background(MichiSurface)
-            .border(1.dp, MichiBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
@@ -474,7 +470,7 @@ fun MichiBottomNav(
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = if (isSelected) MichiOrange else MichiTextMuted,
+                    tint = if (isSelected) MichiOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.height(3.dp))
@@ -483,7 +479,7 @@ fun MichiBottomNav(
                     fontFamily = OutfitFontFamily,
                     fontSize = 10.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) MichiOrange else MichiTextMuted
+                    color = if (isSelected) MichiOrange else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -507,7 +503,7 @@ fun MichiEpisodeCard(
     val borderColor by animateColorAsState(
         targetValue = when {
             isFocused || isCurrent -> MichiOrange
-            else -> MichiBorder
+            else -> MaterialTheme.colorScheme.outline
         },
         label = "ep_border"
     )
@@ -516,7 +512,7 @@ fun MichiEpisodeCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isFocused) MichiSurfaceElevated else MichiSurface)
+            .background(if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
             .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
             .focusable(interactionSource = interactionSource)
             .clickable(interactionSource = interactionSource, indication = null) { onClick() }
@@ -529,7 +525,7 @@ fun MichiEpisodeCard(
                 .width(110.dp)
                 .height(68.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(MichiCardBackground),
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
             if (!thumbnailUrl.isNullOrEmpty()) {
@@ -565,7 +561,7 @@ fun MichiEpisodeCard(
                 fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -576,7 +572,7 @@ fun MichiEpisodeCard(
                     text = description,
                     fontFamily = OutfitFontFamily,
                     fontSize = 12.sp,
-                    color = MichiTextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 16.sp
@@ -604,4 +600,9 @@ fun MichiEpisodeCard(
         modifier = modifier
     )
 }
+
+
+
+
+
 

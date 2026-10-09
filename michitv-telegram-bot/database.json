@@ -1,0 +1,41 @@
+{
+  "devices": {
+    "MICHI-E7CB": {
+      "device_code": "MICHI-E7CB",
+      "license_key": "MICHI-VIP-MICHIE7CB-ENU3",
+      "activated": true,
+      "activated_at": "2026-10-08T22:06:02.928Z",
+      "expires_at": "2026-11-07T22:06:02.928Z",
+      "plan": "VIP MichiTV Pass 🐾",
+      "tg_user_id": 7995536641,
+      "tg_username": "Jota"
+    }
+  },
+  "vouchers": {
+    "MICHI-V-30D-NB4F-NIWI": {
+      "days": 30,
+      "plan": "VIP 30 Días",
+      "created_at": "2026-10-08T21:04:35.772Z",
+      "used": false
+    },
+    "MICHI-V-7D-CQSE-CDNW": {
+      "days": 7,
+      "plan": "Prueba Gratuita VIP 7 Días 🎁",
+      "created_at": "2026-10-08T22:20:37.379Z",
+      "created_by": "Regalo a Jota",
+      "used": false
+    }
+  },
+  "users": {
+    "7995536641": {
+      "id": 7995536641,
+      "username": "Jota",
+      "first_seen": "2026-10-08T22:00:10.877Z",
+      "claimed_trial": true,
+      "last_roulette": 1791496810877,
+      "devices": [
+        "MICHI-E7CB"
+      ]
+    }
+  }
+}

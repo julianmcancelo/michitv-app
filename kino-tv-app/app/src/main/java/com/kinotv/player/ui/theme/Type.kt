@@ -1,4 +1,4 @@
-package com.kinotv.player.ui.theme
+﻿package com.kinotv.player.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
@@ -23,7 +23,7 @@ val MichiTypography = Typography(
         fontSize = 34.sp,
         lineHeight = 42.sp,
         letterSpacing = (-0.5).sp,
-        color = MichiTextPrimary
+        
     ),
     displayMedium = TextStyle(
         fontFamily = OutfitFontFamily,
@@ -31,49 +31,49 @@ val MichiTypography = Typography(
         fontSize = 26.sp,
         lineHeight = 32.sp,
         letterSpacing = (-0.25).sp,
-        color = MichiTextPrimary
+        
     ),
     titleLarge = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.Bold,
         fontSize = 20.sp,
         lineHeight = 26.sp,
-        color = MichiTextPrimary
+        
     ),
     titleMedium = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 22.sp,
-        color = MichiTextPrimary
+        
     ),
     titleSmall = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 15.sp,
         lineHeight = 20.sp,
-        color = MichiTextPrimary
+        
     ),
     bodyLarge = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 21.sp,
-        color = MichiTextSecondary
+        
     ),
     bodyMedium = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        color = MichiTextSecondary
+        
     ),
     bodySmall = TextStyle(
         fontFamily = OutfitFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 11.sp,
         lineHeight = 15.sp,
-        color = MichiTextMuted
+        
     ),
     labelLarge = TextStyle(
         fontFamily = OutfitFontFamily,
@@ -81,7 +81,7 @@ val MichiTypography = Typography(
         fontSize = 14.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.5.sp,
-        color = MichiTextPrimary
+        
     ),
     labelMedium = TextStyle(
         fontFamily = OutfitFontFamily,
@@ -89,7 +89,7 @@ val MichiTypography = Typography(
         fontSize = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 0.4.sp,
-        color = MichiTextSecondary
+        
     ),
     labelSmall = TextStyle(
         fontFamily = OutfitFontFamily,
@@ -97,6 +97,7 @@ val MichiTypography = Typography(
         fontSize = 10.sp,
         lineHeight = 14.sp,
         letterSpacing = 0.3.sp,
-        color = MichiTextMuted
+        
     )
 )
+

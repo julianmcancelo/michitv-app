@@ -1,0 +1,17 @@
+{
+  "name": "michitv-telegram-bot",
+  "version": "1.0.0",
+  "description": "Bot oficial de Telegram y servidor de licencias para MichiTV",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "keywords": [
+    "michitv",
+    "telegram",
+    "bot",
+    "license"
+  ],
+  "author": "MichiTV Team",
+  "license": "MIT"
+}
