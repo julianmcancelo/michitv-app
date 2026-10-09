@@ -261,7 +261,13 @@ fun MainAppNavigation() {
                             })
                             ScreenNav.SEARCH -> TvSearchScreen(onOpenItem = { openedItem = it })
                             ScreenNav.PLUGINS -> TvPluginsScreen()
-                            ScreenNav.SETTINGS -> TvSettingsScreen(onShowUpdate = { availableUpdate = it })
+                            ScreenNav.SETTINGS -> TvSettingsScreen(
+                                onShowUpdate = { availableUpdate = it },
+                                onDeactivated = {
+                                    activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                    currentScreen = ScreenNav.HOME
+                                }
+                            )
                         }
                     }
 
@@ -292,7 +298,13 @@ fun MainAppNavigation() {
                             })
                             ScreenNav.SEARCH -> TvSearchScreen(onOpenItem = { openedItem = it })
                             ScreenNav.PLUGINS -> TvPluginsScreen()
-                            ScreenNav.SETTINGS -> TvSettingsScreen(onShowUpdate = { availableUpdate = it })
+                            ScreenNav.SETTINGS -> TvSettingsScreen(
+                                onShowUpdate = { availableUpdate = it },
+                                onDeactivated = {
+                                    activationInfo = TelegramActivationManager.getActivationInfo(context)
+                                    currentScreen = ScreenNav.HOME
+                                }
+                            )
                         }
                     }
                 }
@@ -1426,7 +1438,8 @@ fun TvPluginsScreen() {
 
 @Composable
 fun TvSettingsScreen(
-    onShowUpdate: (ReleaseInfo) -> Unit = {}
+    onShowUpdate: (ReleaseInfo) -> Unit = {},
+    onDeactivated: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -1923,7 +1936,8 @@ fun TvSettingsScreen(
         val telegramDeepLink = "https://t.me/$rawBotName?start=activar_${activationInfo.deviceCode}"
         val qrCodeUrl = "https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=" +
                 java.net.URLEncoder.encode(telegramDeepLink, "UTF-8") + "&margin=12"
-        var showQrOnMobile by remember { mutableStateOf(false) }
+        // QR visible de entrada si falta activar: escanear = activar al instante
+        var showQrOnMobile by remember(activationInfo.isActivated) { mutableStateOf(!activationInfo.isActivated) }
 
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2464,22 +2478,32 @@ fun TvSettingsScreen(
                         }
 
                         if (showQrOnMobile) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Box(
                                 modifier = Modifier
-                                    .size(180.dp)
+                                    .size(200.dp)
                                     .align(Alignment.CenterHorizontally)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(Color.White)
-                                    .padding(6.dp),
+                                    .padding(8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 AsyncImage(
                                     model = qrCodeUrl,
-                                    contentDescription = "Código QR",
+                                    contentDescription = "Código QR de activación",
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Fit
                                 )
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Apunta la cámara de otro equipo al QR para activar este televisor al instante.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                fontFamily = OutfitFontFamily,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.align(Alignment.CenterHorizontally)
+                            )
                         }
                     }
                 }
@@ -2674,6 +2698,7 @@ fun TvSettingsScreen(
                                         TelegramActivationManager.deactivate(context)
                                         activationInfo = TelegramActivationManager.getActivationInfo(context)
                                         Toast.makeText(context, "Sesión cerrada en este dispositivo", Toast.LENGTH_SHORT).show()
+                                        onDeactivated()
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
                                     shape = RoundedCornerShape(10.dp)
@@ -3922,7 +3947,9 @@ fun MichiActivationWallScreen(
                 .border(2.dp, MichiOrange.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
         ) {
             Column(
-                modifier = Modifier.padding(32.dp),
+                modifier = Modifier
+                    .padding(32.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(imageVector = Icons.Filled.VpnKey, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(48.dp))
@@ -3948,19 +3975,28 @@ fun MichiActivationWallScreen(
 
                 val rawBotName = activationInfo.botUsername.removePrefix("@")
                 val deepLink = "https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"
-                val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${deepLink}"
+                val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=" +
+                        java.net.URLEncoder.encode(deepLink, "UTF-8")
                 val clipboard = LocalClipboardManager.current
+                val scope = rememberCoroutineScope()
+                var isCheckingWall by remember { mutableStateOf(false) }
 
-                // QR visible tanto en TV como en celular: escanea y activa sin escribir
-                AsyncImage(
-                    model = qrUrl,
-                    contentDescription = "Codigo QR de activacion",
+                // QR protagonista: escanea y activa sin escribir (vale para TV y celular)
+                Box(
                     modifier = Modifier
-                        .size(if (isMobile) 200.dp else 180.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(220.dp)
+                        .clip(RoundedCornerShape(16.dp))
                         .background(Color.White)
-                        .padding(8.dp)
-                )
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = qrUrl,
+                        contentDescription = "Codigo QR de activacion",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 if (isMobile) {
                     Button(
@@ -3985,6 +4021,39 @@ fun MichiActivationWallScreen(
                     Text("Escanea el QR con tu telefono", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Text("O busca @${rawBotName} en Telegram y envia el codigo:", color = Color.Gray, fontSize = 12.sp)
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Comprobación manual por si el desbloqueo automático tarda
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isCheckingWall = true
+                            val updated = withContext(Dispatchers.IO) {
+                                TelegramActivationManager.checkRemoteStatus(context)
+                            }
+                            isCheckingWall = false
+                            if (updated != null && updated.isActivated) {
+                                onActivated()
+                            } else {
+                                Toast.makeText(context, "Aún no activo. Escanea el QR o usa /activar.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    enabled = !isCheckingWall,
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MichiCyan),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    if (isCheckingWall) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MichiCyan)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Comprobando...", color = MichiCyan, fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Ya me activé, comprobar ahora", color = MichiCyan, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
