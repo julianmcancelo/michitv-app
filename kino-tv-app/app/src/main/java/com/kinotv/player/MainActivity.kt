@@ -2490,6 +2490,63 @@ fun TvSettingsScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Servidor del bot (para celulares/TV físicos en tu WiFi)
+                var serverUrlInput by remember { mutableStateOf(TelegramActivationManager.getServerUrl(context)) }
+                Text(
+                    text = "Servidor del bot (solo si usas un equipo físico):",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontFamily = OutfitFontFamily
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = serverUrlInput,
+                        onValueChange = { serverUrlInput = it },
+                        placeholder = { Text("http://192.168.0.164:3000", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MichiCyan,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    Button(
+                        onClick = {
+                            val clean = serverUrlInput.trim().removeSuffix("/")
+                            if (clean.isNotBlank()) {
+                                TelegramActivationManager.setServerUrl(context, clean)
+                                RemoteConfigManager.setServerUrl(context, clean)
+                                serverUrlInput = clean
+                                Toast.makeText(context, "Servidor guardado. Comprobando activación...", Toast.LENGTH_SHORT).show()
+                                coroutineScope.launch {
+                                    val res = withContext(Dispatchers.IO) {
+                                        TelegramActivationManager.checkRemoteStatus(context)
+                                    }
+                                    if (res != null && res.isActivated) {
+                                        activationInfo = res
+                                        showCelebrationDialog = true
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Text(text = "Guardar", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
                 if (activationInfo.isActivated) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Row(
