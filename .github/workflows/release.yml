@@ -43,7 +43,8 @@ jobs:
           if [ -d "kino-tv-app" ]; then
             cd kino-tv-app
           fi
-          ./gradlew assembleDebug --stacktrace
+          # Ignorar org.gradle.java.home local (ruta Windows) y usar el JDK del runner
+          ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --stacktrace
 
       - name: 📝 Preparar Archivo APK para Release
         id: prepare_apk
