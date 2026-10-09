@@ -2,7 +2,7 @@
  * 🐾 MichiTV Official Telegram Licensing & Distribution Bot - "MichiBot IA" 🐾
  * 
  * Bot felino inteligente, puntual y sagaz con superpoderes:
- * - Descarga directa del APK de MichiTV Cinema v1.5.0 (24.2 MB) vía Telegram y HTTP.
+ * - Descarga directa del APK de MichiTV Cinema v2.0.0 vía Telegram y HTTP.
  * - Activación instantánea de Smart TV mediante Código QR y Celulares mediante deep-link directo.
  * - Prueba VIP gratuita de bienvenida de 7 días.
  * - Ruleta diaria de la suerte gatuna con premios y vouchers VIP.
@@ -22,7 +22,7 @@ const http = require('http');
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 const DB_PATH = path.join(__dirname, 'database.json');
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
-const PRIMARY_APK_PATH = path.join(DOWNLOADS_DIR, 'MichiTV-Cinema-v1.5.0.apk');
+const PRIMARY_APK_PATH = path.join(DOWNLOADS_DIR, 'MichiTV-Cinema-v2.0.0.apk');
 const FALLBACK_APK_PATH = path.resolve(__dirname, '../kino-tv-app/app/build/outputs/apk/debug/app-debug.apk');
 
 // Asegurar carpeta downloads
@@ -68,7 +68,13 @@ if (fs.existsSync(CONFIG_PATH)) {
 let db = {
     devices: {},
     vouchers: {},
-    users: {}
+    users: {},
+    config: {
+        maintenance: false,
+        maintenance_message: "Estamos mejorando MichiTV. Volvemos en minutos.",
+        maintenance_until: null
+    },
+    support_tickets: {}
 };
 
 function loadDB() {
@@ -78,6 +84,12 @@ function loadDB() {
             if (!db.devices) db.devices = {};
             if (!db.vouchers) db.vouchers = {};
             if (!db.users) db.users = {};
+            if (!db.config) db.config = {
+                maintenance: false,
+                maintenance_message: "Estamos mejorando MichiTV. Volvemos en minutos.",
+                maintenance_until: null
+            };
+            if (!db.support_tickets) db.support_tickets = {};
         } catch (e) {
             console.error("Error cargando database.json:", e.message);
         }
@@ -225,6 +237,8 @@ async function setupBotProfile() {
                 { command: "estado", description: "📋 Consultar vigencia de licencia" },
                 { command: "michi", description: "🐱 Recibir un sticker gatuno" },
                 { command: "faq", description: "❓ Preguntas frecuentes y ayuda" },
+                { command: "soporte", description: "🆘 Soporte técnico" },
+                { command: "mantenimiento", description: "🛠️ Modo mantenimiento (admin)" },
                 { command: "mando", description: "🎮 Atajos para control remoto" },
                 { command: "canjear", description: "🎟 Canjear un voucher VIP" },
                 { command: "admin", description: "👑 Panel del Jefe Michi" }
@@ -300,6 +314,9 @@ function getMainMenuKeyboard(isAdmin = false) {
         [
             { text: "❓ Preguntas Frecuentes", callback_data: "action_faq" },
             { text: "🐱 Sticker Gatuno", callback_data: "action_sticker" }
+        ],
+        [
+            { text: "🆘 Soporte Técnico", callback_data: "action_support" }
         ]
     ];
 
@@ -347,18 +364,20 @@ async function handleDownloadApk(chatId) {
     const sizeMb = (stat.size / (1024 * 1024)).toFixed(1);
 
     await sendMessage(chatId, `🐾 <b>¡Preparando el paquete oficial de MichiTV Cinema OS!</b>\n` +
-        `📦 <b>Archivo:</b> <code>MichiTV-Cinema-v1.5.0.apk</code>\n` +
+        `📦 <b>Archivo:</b> <code>MichiTV-Cinema-v2.0.0.apk</code>\n` +
         `⚖️ <b>Tamaño:</b> ${sizeMb} MB\n\n` +
         `<i>Subiendo directamente a este chat de Telegram, un momento...</i> 🐱⏳`);
 
     try {
-        const caption = `🍿 <b>MichiTV Cinema OS • v1.5.0 (Edición Oficial)</b> 🐾✨\n\n` +
+        const caption = `🍿 <b>MichiTV Cinema OS • v2.0.0 (Edición Oficial)</b> 🐾✨\n\n` +
             `📱 <b>Compatibilidad:</b> Android TV, Google TV, Fire TV Stick, Xiaomi Box, Teléfonos y Tablets.\n` +
             `⚡️ <b>Peso:</b> ${sizeMb} MB\n\n` +
             `<b>🌟 Novedades de esta versión:</b>\n` +
+            `• 🛠️ <b>Modo Mantenimiento con temporizador</b> desde Telegram.\n` +
+            `• 🆘 <b>Soporte técnico integrado</b> en el bot.\n` +
+            `• 📷 <b>QR de activación también en celulares</b> + código copiable.\n` +
+            `• 🎬 <b>Reproducción más estable</b> (servidor FC prioritario).\n` +
             `• 🌙 <b>Modo Cine Oscuro OLED</b> profundo con acentos neón.\n` +
-            `• 📷 <b>Activación con Código QR</b> para Smart TV (escaneo instantáneo).\n` +
-            `• 📱 <b>Acceso Directo de 1 toque</b> a Telegram para celulares.\n` +
             `• 🔌 Scrapers de Anime, Películas y Series en Español Latino y HD.\n` +
             `• 💾 Reanudación automática <i>Continuar Viendo</i> con base local Room.\n\n` +
             `<i>¡Instala el APK y abre los Ajustes de la app para activarla al instante!</i> 🍿🐱`;
@@ -878,6 +897,116 @@ async function showAdminPanel(chatId) {
     });
 }
 
+// 13. Modo Mantenimiento Global con temporizador (solo admin)
+// Uso: /mantenimiento on [minutos] [mensaje] | /mantenimiento off | /mantenimiento estado
+async function handleMaintenanceCommand(chatId, userId, text) {
+    const isAdmin = config.admin_ids.includes(userId) || config.admin_ids.length === 0;
+    if (!isAdmin) {
+        await sendMessage(chatId, `🔒 <b>Solo el Jefe Michi puede usar este comando.</b> 🐾`);
+        return;
+    }
+    const args = text.split(/\s+/).slice(1); // quita "/mantenimiento"
+    const sub = (args[0] || "").toLowerCase();
+
+    if (sub === "off") {
+        db.config.maintenance = false;
+        db.config.maintenance_until = null;
+        saveDB();
+        await sendMessage(chatId, `✅ <b>Modo mantenimiento APAGADO.</b>\nLas apps volverán al catálogo solas en segundos. 🐾`);
+        return;
+    }
+
+    if (sub === "estado" || sub === "status") {
+        const m = db.config.maintenance;
+        const until = db.config.maintenance_until;
+        const left = (m && until) ? Math.max(0, Math.ceil((until - Date.now()) / 60000)) : null;
+        await sendMessage(chatId, `🛠️ <b>Estado de mantenimiento:</b> ${m ? "🟡 ACTIVO" : "🟢 APAGADO"}\n` +
+            (m ? `💬 Mensaje: ${db.config.maintenance_message}\n` : "") +
+            (left !== null ? `⏱ Quedan aprox. ${left} minutos.\n` : "") +
+            `\nUsa <code>/mantenimiento on 30 Estamos actualizando</code> o <code>/mantenimiento off</code>.`);
+        return;
+    }
+
+    if (sub === "on") {
+        let minutes = null;
+        let msgStart = 1;
+        if (args[1] && /^\d+$/.test(args[1])) {
+            minutes = parseInt(args[1], 10);
+            msgStart = 2;
+        }
+        const message = args.slice(msgStart).join(" ").trim() ||
+            "Estamos realizando mejoras en nuestros servidores. Volvemos enseguida.";
+        db.config.maintenance = true;
+        db.config.maintenance_message = message;
+        db.config.maintenance_until = minutes ? Date.now() + minutes * 60000 : null;
+        saveDB();
+        await sendMessage(chatId, `🛠️ <b>Modo mantenimiento ACTIVADO.</b> 🐾\n\n` +
+            `💬 Mensaje: ${message}\n` +
+            (minutes ? `⏱ Duración: ${minutes} minutos (se apaga solo).\n` : `⏱ Duración: indefinida (apágala con <code>/mantenimiento off</code>).\n`) +
+            `\nLas apps mostrarán la pantalla de mantenimiento en segundos.`);
+        return;
+    }
+
+    await sendMessage(chatId, `🛠️ <b>Uso del modo mantenimiento:</b>\n\n` +
+        `<code>/mantenimiento on 30 Estamos actualizando</code>\n` +
+        `<code>/mantenimiento on Estamos arreglando la app</code> (sin tiempo)\n` +
+        `<code>/mantenimiento off</code>\n` +
+        `<code>/mantenimiento estado</code>`);
+}
+
+// 14. Soporte técnico: ticket del cliente + respuesta del admin por Reply
+async function handleSupportMessage(chatId, userId, username, text) {
+    const ticketId = Date.now().toString(36).toUpperCase().slice(-6);
+    db.support_tickets[ticketId] = {
+        id: ticketId,
+        user_chat_id: chatId,
+        user_id: userId,
+        username: username,
+        message: text,
+        created_at: new Date().toISOString(),
+        status: "open"
+    };
+    saveDB();
+
+    await sendMessage(chatId, `✅ <b>¡Ticket recibido!</b> 🐾\n\nTu mensaje ya está en manos del equipo MichiTV. Te responderemos por este mismo chat en breve.\n🎫 Ticket: <code>${ticketId}</code>`);
+
+    const adminMsg = `🆘 <b>Nuevo Ticket de Soporte</b>\n\n` +
+        `👤 Usuario: ${username}\n🆔 (ID: ${ticketId})\n\n` +
+        `💬 Mensaje: "${text}"\n\n` +
+        `<i>Para responder, mantén presionado ESTE mensaje, elige "Responder" (Reply) y escribe la solución.</i>`;
+
+    const admins = config.admin_ids.length > 0 ? config.admin_ids : [chatId];
+    for (const adminId of admins) {
+        try {
+            // No reenviar al mismo cliente si también es admin: igual le sirve como copia
+            await sendMessage(adminId, adminMsg);
+        } catch (e) {}
+    }
+}
+
+async function handleAdminReply(msg) {
+    // El admin respondió con Reply a un ticket: reenviar al cliente
+    const reply = msg.reply_to_message;
+    if (!reply || !reply.text) return false;
+    if (reply.text.indexOf("Nuevo Ticket de Soporte") === -1) return false;
+    const m = /ID:\s*([A-Z0-9]+)/.exec(reply.text);
+    if (!m) return false;
+    const ticket = db.support_tickets[m[1]];
+    if (!ticket) return false;
+
+    const answer = (msg.text || "").trim();
+    if (!answer) return true;
+    ticket.status = "answered";
+    saveDB();
+    try {
+        await sendMessage(ticket.user_chat_id, `🐾 <b>Respuesta del equipo MichiTV</b> (🎫 ${ticket.id}):\n\n${answer}`);
+        await sendMessage(msg.chat.id, `✅ <b>Respuesta enviada al cliente.</b> 🐾`);
+    } catch (e) {
+        await sendMessage(msg.chat.id, `⚠️ No pude entregar la respuesta: ${e.message}`);
+    }
+    return true;
+}
+
 // Procesar mensajes entrantes
 async function handleMessage(msg) {
     if (!msg.text) return;
@@ -896,6 +1025,12 @@ async function handleMessage(msg) {
     }
 
     touchUser(userId, username);
+
+    // Respuesta del admin a un ticket (Reply al mensaje del ticket)
+    if (msg.reply_to_message && isAdmin) {
+        const handled = await handleAdminReply(msg);
+        if (handled) return;
+    }
 
     // --- MANEJO DE DEEP LINKING (QR DESDE TV O BOTÓN CELULAR) ---
     if (text.startsWith('/start ') && text.length > 7) {
@@ -932,6 +1067,9 @@ async function handleMessage(msg) {
             return;
         } else if (state.type === 'WAITING_STATUS_CODE') {
             await processCheckStatus(chatId, text);
+            return;
+        } else if (state.type === 'WAITING_SUPPORT_MSG') {
+            await handleSupportMessage(chatId, userId, username, text);
             return;
         }
     }
@@ -994,6 +1132,19 @@ async function handleMessage(msg) {
     // --- COMANDO /mando ---
     if (text === '/mando' || text === '/control' || text === '/atajos') {
         await showRemoteGuide(chatId);
+        return;
+    }
+
+    // --- COMANDO /mantenimiento (admin: on/off/estado, con minutos opcionales) ---
+    if (text.startsWith('/mantenimiento') || text.startsWith('/maintenance')) {
+        await handleMaintenanceCommand(chatId, userId, text);
+        return;
+    }
+
+    // --- COMANDO /soporte (ticket del cliente) ---
+    if (text === '/soporte' || text === '/support' || text === '/ayuda_soporte') {
+        userStates[chatId] = { type: 'WAITING_SUPPORT_MSG' };
+        await sendMessage(chatId, `🆘 <b>Soporte Técnico MichiTV</b> 🐾\n\nCuéntame tu problema en un solo mensaje (qué falla, en qué pantalla y en qué dispositivo):`);
         return;
     }
 
@@ -1094,6 +1245,9 @@ async function handleCallback(query) {
         await showFaq(chatId);
     } else if (data === "action_mando") {
         await showRemoteGuide(chatId);
+    } else if (data === "action_support") {
+        userStates[chatId] = { type: 'WAITING_SUPPORT_MSG' };
+        await sendMessage(chatId, `🆘 <b>Soporte Técnico MichiTV</b> 🐾\n\nCuéntame tu problema en un solo mensaje (qué falla, en qué pantalla y en qué dispositivo):`);
     } else if (data === "action_sticker") {
         await sendRandomCatSticker(chatId);
     } else if (data === "action_activate") {
@@ -1174,7 +1328,7 @@ const server = http.createServer((req, res) => {
             res.writeHead(200, {
                 'Content-Type': 'application/vnd.android.package-archive',
                 'Content-Length': stat.size,
-                'Content-Disposition': 'attachment; filename="MichiTV-Cinema-v1.5.0.apk"'
+                'Content-Disposition': 'attachment; filename="MichiTV-Cinema-v2.0.0.apk"'
             });
             const stream = fs.createReadStream(apkPath);
             stream.pipe(res);
@@ -1184,6 +1338,31 @@ const server = http.createServer((req, res) => {
             res.end("El archivo APK aún no está compilado en el servidor.");
             return;
         }
+    }
+
+    // Endpoint de configuracion remota para la app (mantenimiento + cuenta regresiva)
+    if (url.pathname === '/api/config') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        // Apagado automatico cuando se cumple el temporizador
+        if (db.config && db.config.maintenance && db.config.maintenance_until) {
+            if (Date.now() >= db.config.maintenance_until) {
+                db.config.maintenance = false;
+                db.config.maintenance_until = null;
+                saveDB();
+            }
+        }
+        const maintenance = !!(db.config && db.config.maintenance);
+        const until = (db.config && db.config.maintenance_until) || null;
+        const timeLeft = (maintenance && until) ? Math.max(0, until - Date.now()) : null;
+        res.writeHead(200);
+        res.end(JSON.stringify({
+            maintenance: maintenance,
+            message: (db.config && db.config.maintenance_message) || "Estamos mejorando MichiTV. Volvemos en minutos.",
+            maintenance_until: until,
+            timeLeft: timeLeft
+        }));
+        return;
     }
 
     // Endpoint de verificación de estado para la app
@@ -1282,7 +1461,7 @@ const server = http.createServer((req, res) => {
             status: "online",
             bot: `@${config.bot_username}`,
             service: "MichiTV Licensing Quantum Server",
-            version: "1.5.0",
+            version: "2.0.0",
             devices_registered: Object.keys(db.devices).length,
             users_registered: Object.keys(db.users).length,
             apk_available: !!getApkPath()

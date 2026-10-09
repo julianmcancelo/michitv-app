@@ -135,6 +135,9 @@ fun MainAppNavigation() {
     // --- BLOQUEO DE ACTIVACION OBLIGATORIA ---
     var activationInfo by remember { mutableStateOf(TelegramActivationManager.getActivationInfo(context)) }
 
+    // --- MODO MANTENIMIENTO GLOBAL (Remote Config via Bot) ---
+    var remoteConfig by remember { mutableStateOf(RemoteConfig()) }
+
     // Polling reactivo en tiempo real para auto-activacion sin escribir nada
     LaunchedEffect(activationInfo.isActivated) {
         if (!activationInfo.isActivated) {
@@ -151,12 +154,47 @@ fun MainAppNavigation() {
         }
     }
 
+    // Bucle de escucha de mantenimiento cada 5 segundos (en vivo, sin reabrir la app)
+    LaunchedEffect(activationInfo.isActivated) {
+        while (true) {
+            val cfg = RemoteConfigManager.fetchConfig(context)
+            remoteConfig = cfg
+            kotlinx.coroutines.delay(5000)
+        }
+    }
+
+    // Dialogo de novedades v2.0.0 (una vez por version)
+    var showWhatsNew by remember {
+        val prefs = context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
+        mutableStateOf(prefs.getString("last_seen_version", "") != "2.0.0")
+    }
+
     if (!activationInfo.isActivated) {
         MichiActivationWallScreen(
             activationInfo = activationInfo,
             onActivated = { activationInfo = TelegramActivationManager.getActivationInfo(context) }
         )
         return // Bloquea completamente el acceso a la app
+    }
+
+    // Bloqueo total por mantenimiento: ni catalogo ni reproductor intentan cargar
+    if (remoteConfig.maintenance) {
+        MichiMaintenanceScreen(
+            message = remoteConfig.maintenanceMessage,
+            timeLeftMs = remoteConfig.timeLeftMs
+        )
+        return
+    }
+
+    // Novedades v2.0.0 al iniciar (una vez por version)
+    if (showWhatsNew) {
+        MichiWhatsNewDialog(
+            onDismiss = {
+                context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
+                    .edit().putString("last_seen_version", "2.0.0").apply()
+                showWhatsNew = false
+            }
+        )
     }
 
     // ComprobaciÃ³n inteligente en segundo plano si estÃ¡ activado
@@ -2599,6 +2637,7 @@ fun DetailScreen(
 
     var details by remember { mutableStateOf<DetailMeta?>(initialMeta) }
     var pluginEpisodes by remember { mutableStateOf<List<EpisodeItem>>(emptyList()) }
+    var episodePluginId by remember { mutableStateOf(item.pluginId ?: "") }
     var loading by remember { mutableStateOf(initialMeta == null) }
     var resolvingStream by remember { mutableStateOf(false) }
 
@@ -2613,6 +2652,17 @@ fun DetailScreen(
             if (eps.isNotEmpty()) {
                 pluginEpisodes = eps
             }
+        }
+
+        // 1b. Series sin plugin (fichas Cinemeta): buscar capitulos por nombre
+        if (item.type == "series" && pluginEpisodes.isEmpty()) {
+            try {
+                val (src, eps) = KinoPluginEngine.getEpisodesByName(context, item.name, item.year)
+                if (eps.isNotEmpty()) {
+                    pluginEpisodes = eps
+                    episodePluginId = src
+                }
+            } catch (e: Exception) { }
         }
 
         // 2. Si no tiene metadatos completos y es un ID de IMDB (tt...), buscar en Cinemeta
@@ -2872,7 +2922,7 @@ fun DetailScreen(
                                             onClick = {
                                                 scope.launch {
                                                     resolvingStream = true
-                                                    var resolved = KinoPluginEngine.resolveStream(context, item.pluginId ?: "", ep.id ?: item.ref ?: "")
+                                                    var resolved = KinoPluginEngine.resolveStream(context, episodePluginId.ifEmpty { item.pluginId ?: "" }, ep.ref ?: ep.id ?: item.ref ?: "")
                                                     if (resolved == null) {
                                                         resolved = KinoPluginEngine.resolveByName(context, "${meta.name} ${ep.name ?: ""}")
                                                     }
@@ -3033,7 +3083,7 @@ fun DetailScreen(
                                                     onClick = {
                                                         scope.launch {
                                                             resolvingStream = true
-                                                            var resolved = KinoPluginEngine.resolveStream(context, item.pluginId ?: "", ep.id ?: item.ref ?: "")
+                                                            var resolved = KinoPluginEngine.resolveStream(context, episodePluginId.ifEmpty { item.pluginId ?: "" }, ep.ref ?: ep.id ?: item.ref ?: "")
                                                             if (resolved == null) {
                                                                 resolved = KinoPluginEngine.resolveByName(context, "${meta.name} ${ep.name ?: ""}")
                                                             }
@@ -3347,6 +3397,117 @@ fun TvEpisodeCard(
 
 
 @Composable
+fun MichiMaintenanceScreen(
+    message: String,
+    timeLeftMs: Long?
+) {
+    var remainingMs by remember(timeLeftMs) { mutableStateOf(timeLeftMs) }
+    LaunchedEffect(timeLeftMs) {
+        while (true) {
+            val r = remainingMs ?: break
+            if (r <= 0) break
+            kotlinx.coroutines.delay(1000)
+            remainingMs = (remainingMs ?: 0) - 1000
+        }
+    }
+    val countdownText = remainingMs?.let {
+        val totalSec = (it.coerceAtLeast(0) / 1000).toInt()
+        val mm = totalSec / 60
+        val ss = totalSec % 60
+        "%02d:%02d".format(mm, ss)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF05060A)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Construction,
+                contentDescription = null,
+                tint = MichiOrange,
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "MODO MANTENIMIENTO",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 26.sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = message,
+                color = Color(0xFFB0B3C0),
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center
+            )
+            if (countdownText != null) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Volvemos en:",
+                    color = Color(0xFF8A8FA0),
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = countdownText,
+                    color = Color(0xFF40E0D0),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 44.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "La app volvera sola cuando termine. No toques nada.",
+                    color = Color(0xFF8A8FA0),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+            } else {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "Volvemos en unos minutos. Gracias por tu paciencia.",
+                    color = Color(0xFF8A8FA0),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Entendido", color = Color.White, fontWeight = FontWeight.Bold) }
+        },
+        title = { Text("Novedades MichiTV 2.0.0", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Activacion con Telegram: usa /activar MICHI-XXXX o escanea el QR.")
+                Text("Modo mantenimiento con cuenta regresiva automatica.")
+                Text("Soporte tecnico integrado desde el bot.")
+                Text("Reproduccion mas estable: servidor FC prioritario.")
+                Text("Correcciones de disenio y rendimiento.")
+            }
+        },
+        shape = RoundedCornerShape(20.dp)
+    )
+}
+
+@Composable
 fun MichiActivationWallScreen(
     activationInfo: TelegramActivationInfo,
     onActivated: () -> Unit
@@ -3377,7 +3538,7 @@ fun MichiActivationWallScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Text(
-                    text = "¡Dispositivo No Activado!",
+                    text = "Dispositivo no activado",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp
@@ -3395,7 +3556,21 @@ fun MichiActivationWallScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 val rawBotName = activationInfo.botUsername.removePrefix("@")
+                val deepLink = "https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"
+                val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${deepLink}"
+                val clipboard = LocalClipboardManager.current
 
+                // QR visible tanto en TV como en celular: escanea y activa sin escribir
+                AsyncImage(
+                    model = qrUrl,
+                    contentDescription = "Codigo QR de activacion",
+                    modifier = Modifier
+                        .size(if (isMobile) 200.dp else 180.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .padding(8.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
                 if (isMobile) {
                     Button(
                         onClick = {
@@ -3403,7 +3578,7 @@ fun MichiActivationWallScreen(
                             try {
                                 context.startActivity(intent)
                             } catch (e: Exception) {
-                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"))
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink))
                                 context.startActivity(webIntent)
                             }
                         },
@@ -3411,37 +3586,32 @@ fun MichiActivationWallScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Abrir en Telegram (Auto-Activación)", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("Abrir en Telegram (auto-activacion)", color = Color.White, fontWeight = FontWeight.Bold)
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("O escanea el QR desde otro telefono", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 } else {
-                    // TV QR
-                    val qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"
-                    AsyncImage(
-                        model = qrUrl,
-                        contentDescription = "QR Code",
-                        modifier = Modifier
-                            .size(180.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White)
-                            .padding(8.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Escanea el QR con tu teléfono", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("O busca @${rawBotName} en Telegram y envía el código:", color = Color.Gray, fontSize = 12.sp)
+                    Text("Escanea el QR con tu telefono", color = Color.White, fontWeight = FontWeight.Bold)
                 }
-                
+                Text("O busca @${rawBotName} en Telegram y envia el codigo:", color = Color.Gray, fontSize = 12.sp)
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color.White.copy(alpha = 0.1f))
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .clickable {
+                            clipboard.setText(AnnotatedString(activationInfo.deviceCode))
+                            Toast.makeText(context, "Codigo copiado", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("CÓDIGO TV: ", color = Color.LightGray, fontSize = 14.sp)
-                    Text(activationInfo.deviceCode, color = MichiOrange, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                    Text("CODIGO: ", color = Color.LightGray, fontSize = 14.sp)
+                    Text(activationInfo.deviceCode, color = MichiOrange, fontWeight = FontWeight.Black, fontSize = 26.sp)
                 }
+                Text("Toca el codigo para copiarlo", color = Color.Gray, fontSize = 11.sp)
 
                 Spacer(modifier = Modifier.height(24.dp))
                 
@@ -3449,7 +3619,7 @@ fun MichiActivationWallScreen(
                 OutlinedTextField(
                     value = inputKey,
                     onValueChange = { inputKey = it },
-                    placeholder = { Text("PIN Numérico o Voucher") },
+                    placeholder = { Text("PIN numerico o voucher") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MichiOrange,
@@ -3462,7 +3632,7 @@ fun MichiActivationWallScreen(
                         Button(
                             onClick = {
                                 val ok = TelegramActivationManager.activateWithKey(context, inputKey)
-                                if (ok) onActivated() else Toast.makeText(context, "Clave inválida", Toast.LENGTH_SHORT).show()
+                                if (ok) onActivated() else Toast.makeText(context, "Clave invalida", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
                             shape = RoundedCornerShape(8.dp)
@@ -3481,7 +3651,7 @@ fun MichiActivationWallScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                     modifier = Modifier.border(1.dp, MichiOrange, RoundedCornerShape(12.dp))
                 ) {
-                    Text("Probar 7 Días Gratis ??", color = MichiOrange)
+                    Text("Probar 7 dias gratis", color = MichiOrange)
                 }
             }
         }

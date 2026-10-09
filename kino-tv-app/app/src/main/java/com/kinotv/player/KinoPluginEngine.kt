@@ -60,6 +60,40 @@ object KinoPluginEngine {
         }
     }
 
+    /**
+     * Busca episodios de una serie por nombre (para fichas Cinemeta sin plugin).
+     * Retorna el plugin que los proveyo junto con la lista ("" si no hay).
+     */
+    suspend fun getEpisodesByName(context: Context, name: String, year: String? = null): Pair<String, List<EpisodeItem>> = withContext(Dispatchers.IO) {
+        val cleanName = name.replace(Regex("""\(?\d{4}\)?"""), "").trim()
+        if (cleanName.isEmpty()) return@withContext "" to emptyList()
+        // 1. FuegoCine primero (resolucion directa probada)
+        try {
+            val hits = search(context, "fuegocine", cleanName)
+            val ordered = hits.filter { it.type == "series" }.ifEmpty { hits }.take(3)
+            for (hit in ordered) {
+                val ref = hit.ref ?: continue
+                if (!Regex("""^\d{5,20}$""").matches(ref)) continue
+                val eps = getEpisodes(context, "fuegocine", ref)
+                if (eps.isNotEmpty()) return@withContext "fuegocine" to eps
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getEpisodesByName fuegocine: $cleanName", e)
+        }
+        // 2. Latino como respaldo (refs s:{tmdbId} o de sitio)
+        try {
+            val hits = search(context, "latino", cleanName).take(3)
+            for (hit in hits) {
+                val ref = hit.ref ?: continue
+                val eps = getEpisodes(context, "latino", ref)
+                if (eps.isNotEmpty()) return@withContext "latino" to eps
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getEpisodesByName latino: $cleanName", e)
+        }
+        "" to emptyList()
+    }
+
     suspend fun getHomeRows(context: Context, pluginId: String): List<CatalogRow> = withContext(Dispatchers.IO) {
         val executor = Executors.newSingleThreadExecutor()
         val dispatcher = executor.asCoroutineDispatcher()
@@ -141,7 +175,7 @@ object KinoPluginEngine {
                 (async function() {
                     try {
                         var res = await search($escapedQuery);
-                        if (!res) res = await search({ q: $escapedQuery });
+                        if (!res || (Array.isArray(res) && res.length === 0)) { try { res = await search({ q: $escapedQuery }); } catch (e2) {} }
                         __resolve_search(JSON.stringify(res || []));
                     } catch(e) {
                         __reject_search(e ? (e.message || String(e)) : "error");
@@ -474,11 +508,17 @@ object KinoPluginEngine {
         }
 
         quickJs.function("__native_atob") { args ->
-            val s = args.firstOrNull()?.toString() ?: ""
+            var s = args.firstOrNull()?.toString() ?: ""
             try {
-                String(Base64.getDecoder().decode(s))
+                s = s.replace('-', '+').replace('_', '/')
+                val pad = (4 - s.length % 4) % 4
+                String(Base64.getDecoder().decode(s + "=".repeat(pad)))
             } catch (e: Exception) {
-                ""
+                try {
+                    String(Base64.getUrlDecoder().decode(s))
+                } catch (e2: Exception) {
+                    ""
+                }
             }
         }
 
@@ -520,6 +560,16 @@ object KinoPluginEngine {
             true
         }
 
+        quickJs.function("__native_tmdb") { args ->
+            val path = args.getOrNull(0)?.toString() ?: ""
+            val paramsStr = args.getOrNull(1)?.toString() ?: "{}"
+            try {
+                TmdbEmulator.handleTmdbRequest(path, org.json.JSONObject(paramsStr))
+            } catch (e: Exception) {
+                "{\"results\":[]}"
+            }
+        }
+
         quickJs.function("__native_config_get") { args ->
             val key = args.firstOrNull()?.toString() ?: ""
             when (key) {
@@ -558,7 +608,12 @@ object KinoPluginEngine {
             }
 
             if (method == "POST" || method == "PUT") {
-                val bodyStr = opts.optString("body", "")
+                val bodyRaw = if (opts.has("body")) opts.get("body") else null
+                val bodyStr = when (bodyRaw) {
+                    null, JSONObject.NULL -> ""
+                    is String -> bodyRaw
+                    else -> bodyRaw.toString()
+                }
                 val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
                 reqBuilder.method(method, bodyStr.toRequestBody(mediaType))
             } else {
@@ -642,6 +697,57 @@ object KinoPluginEngine {
             globalThis.atob = function(s) { return __native_atob(s); };
             globalThis.btoa = function(s) { return __native_btoa(s); };
 
+            // searchParams + toString para el polyfill de URL (lo usa caracol-tv)
+            (function() {
+                try {
+                    var OrigURL = globalThis.URL;
+                    var probe = null;
+                    try { probe = new OrigURL('https://x.test/?a=1'); } catch (e) {}
+                    if (probe && (!probe.searchParams || typeof probe.searchParams.set !== 'function')) {
+                        globalThis.URL = function(url, base) {
+                            var inst = new OrigURL(url, base);
+                            var params = {};
+                            var q = inst.search || '';
+                            if (q.charAt(0) === '?') q = q.slice(1);
+                            q.split('&').forEach(function(pair) {
+                                if (!pair) return;
+                                var idx = pair.indexOf('=');
+                                var rk = idx >= 0 ? pair.slice(0, idx) : pair;
+                                var rv = idx >= 0 ? pair.slice(idx + 1) : '';
+                                try { params[decodeURIComponent(rk)] = decodeURIComponent(rv); }
+                                catch (e2) { params[rk] = rv; }
+                            });
+                            function sync() {
+                                var qs = Object.keys(params).map(function(k) {
+                                    return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+                                }).join('&');
+                                var baseHref = String(inst.href).split('?')[0].split('#')[0];
+                                var hash = inst.hash || '';
+                                inst.href = qs ? baseHref + '?' + qs + hash : baseHref + hash;
+                                inst.search = qs ? '?' + qs : '';
+                            }
+                            inst.searchParams = {
+                                set: function(k, v) { params[String(k)] = String(v); sync(); },
+                                get: function(k) { var v = params[String(k)]; return v === undefined ? null : v; },
+                                has: function(k) { return Object.prototype.hasOwnProperty.call(params, String(k)); },
+                                append: function(k, v) { params[String(k)] = String(v); sync(); },
+                                toString: function() {
+                                    return Object.keys(params).map(function(k) {
+                                        return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+                                    }).join('&');
+                                }
+                            };
+                            inst.toString = function() { return inst.href; };
+                            return inst;
+                        };
+                    } else if (probe && typeof probe.toString !== 'function') {
+                        // URL nativa sin toString util: no se toca
+                    }
+                } catch (e) {
+                    __native_log('URL patch: ' + (e && e.message || e));
+                }
+            })();
+
             globalThis.kino = {
                 fetchAnyHost: true,
                 manifest: {
@@ -680,6 +786,13 @@ object KinoPluginEngine {
                 log: function() {
                     var args = Array.prototype.slice.call(arguments);
                     __native_log(args.join(' '));
+                },
+                tmdb: async function(path, params) {
+                    return JSON.parse(__native_tmdb(String(path || ''), JSON.stringify(params || {})));
+                },
+                cookies: {
+                    get: function(url, name) { return null; },
+                    set: function(url, name, value) {}
                 }
             };
 

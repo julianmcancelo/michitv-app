@@ -527,9 +527,12 @@ export async function episodes(ref) {
 
 function knownRank(url) {
   const u = unent(url);
+  // PRIORIDAD ALTA: Servidor FC (FuegoCine) - siempre probar primero
+  if (u.indexOf("repfuegocinefree.blogspot.com") >= 0) return 5;
+  if (u.indexOf("fc") >= 0 && u.indexOf("blogspot") >= 0) return 5;
+  // PRIORIDAD MEDIA-ALTA: Videro y OK.RU
   if (u.indexOf("videro.my/e/") >= 0) return 4;
-  if (u.indexOf("repfuegocinefree.blogspot.com") >= 0) return 3;
-  if (/ok\.ru\//.test(u)) return 3;
+  if (/ok\.ru\//.test(u)) return 4;
   if (u.indexOf("avcaption.com/") >= 0) return 3;
   if (u.indexOf("playmate.to/") >= 0) return 3;
   if (u.indexOf("unlimplay.com/f/embed/") >= 0) return 2;
