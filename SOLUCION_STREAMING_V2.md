@@ -81,7 +81,18 @@ tenía de dónde resolver.
   con tarjetas T1 E1 etc. (captura `emu_s6.png`).
 - Anime e IPTV siguen funcionando como antes.
 
-## 6. Notas / pendientes conocidos
+## 6. Verificación final en emulador (serie + capítulo + play)
+
+- Serie "Lanterns" (ficha Cinemeta sin plugin): muestra "Episodios y Temporadas ·
+  8 caps" con tarjetas y miniaturas.
+- Tocar T1 E1 → `getEpisodesByName` (FuegoCine) → `resolveStream` OK
+  (`https://hugh.cdn.rumble.cloud/...mp4`) → reproductor ExoPlayer con video
+  en pantalla ("Lanterns - T1 E1: Episodio 1").
+- Ajuste extra: en `getEpisodesByName`, la rama Latino ahora prueba primero los
+  hits de tipo serie (antes probaba refs de película `m:` y fallaba con
+  "not a series ref").
+
+## 7. Notas / pendientes conocidos
 
 - Fuentes de latino (lamovie, cinecalidad, hackstore, seriesmetro) responden
   lento o vacío según red/horario; FuegoCine es ahora la vía principal y

@@ -82,8 +82,9 @@ object KinoPluginEngine {
         }
         // 2. Latino como respaldo (refs s:{tmdbId} o de sitio)
         try {
-            val hits = search(context, "latino", cleanName).take(3)
-            for (hit in hits) {
+            val hits = search(context, "latino", cleanName)
+            val orderedLatino = hits.filter { it.type == "series" }.ifEmpty { hits }.take(3)
+            for (hit in orderedLatino) {
                 val ref = hit.ref ?: continue
                 val eps = getEpisodes(context, "latino", ref)
                 if (eps.isNotEmpty()) return@withContext "latino" to eps
