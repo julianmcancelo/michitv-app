@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import com.kinotv.player.ui.theme.*
 import com.kinotv.player.ui.components.*
 import androidx.media3.common.MediaItem
@@ -187,14 +188,10 @@ fun MainAppNavigation() {
         return
     }
 
-    // Novedades v2.0.0 al iniciar (una vez por version)
+    // Novedades v2.0.0 al iniciar (el dialogo decide si no mostrar mas)
     if (showWhatsNew) {
         MichiWhatsNewDialog(
-            onDismiss = {
-                context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-                    .edit().putString("last_seen_version", "2.0.0").apply()
-                showWhatsNew = false
-            }
+            onDismiss = { showWhatsNew = false }
         )
     }
 
@@ -3876,28 +3873,199 @@ fun MichiMaintenanceScreen(
 }
 
 @Composable
+fun MichiWhatsNewRow(icon: ImageVector, tint: Color, title: String, desc: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        }
+        Column {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                fontFamily = OutfitFontFamily
+            )
+            Text(
+                text = desc,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                fontFamily = OutfitFontFamily
+            )
+        }
+    }
+}
+
+@Composable
 fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
-                shape = RoundedCornerShape(12.dp)
-            ) { Text("Entendido", color = Color.White, fontWeight = FontWeight.Bold) }
-        },
-        title = { Text("Novedades MichiTV 2.0.0", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Activacion con Telegram: usa /activar MICHI-XXXX o escanea el QR.")
-                Text("Modo mantenimiento con cuenta regresiva automatica.")
-                Text("Soporte tecnico integrado desde el bot.")
-                Text("Reproduccion mas estable: servidor FC prioritario.")
-                Text("Correcciones de disenio y rendimiento.")
+    val context = LocalContext.current
+    var hideForever by remember { mutableStateOf(true) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Brush.horizontalGradient(listOf(MichiOrange, MichiOrangeDark)))
+                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Celebration,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Novedades",
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                fontFamily = OutfitFontFamily,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = "MichiTV 2.0.0",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 22.sp,
+                                fontFamily = OutfitFontFamily
+                            )
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.QrCode2,
+                        tint = MichiOrange,
+                        title = "Activación con QR",
+                        desc = "Escanea el código o usa /activar en Telegram."
+                    )
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.Timer,
+                        tint = MichiCyan,
+                        title = "Mantenimiento programado",
+                        desc = "Pausas con cuenta regresiva automática."
+                    )
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.SupportAgent,
+                        tint = Color(0xFF00E676),
+                        title = "Soporte en el bot",
+                        desc = "Ayuda directa desde Telegram."
+                    )
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.HighQuality,
+                        tint = MichiGold,
+                        title = "Reproducción estable",
+                        desc = "Servidor principal prioritario."
+                    )
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.Palette,
+                        tint = Color(0xFFB388FF),
+                        title = "Ajustes por pestañas",
+                        desc = "Todo organizado y sin cortes."
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { hideForever = !hideForever }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = hideForever,
+                            onCheckedChange = { hideForever = it },
+                            colors = CheckboxDefaults.colors(checkedColor = MichiOrange)
+                        )
+                        Text(
+                            text = "No volver a mostrar",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            fontFamily = OutfitFontFamily
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            if (hideForever) {
+                                context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
+                                    .edit().putString("last_seen_version", "2.0.0").apply()
+                            }
+                            onDismiss()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(vertical = 13.dp)
+                    ) {
+                        Text("Entendido", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
             }
-        },
-        shape = RoundedCornerShape(20.dp)
-    )
+        }
+    }
+}
+
+@Composable
+fun WallStep(number: String, label: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.width(90.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(MichiOrangeGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = number,
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 15.sp
+            )
+        }
+        Text(
+            text = label,
+            color = Color.LightGray,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 14.sp
+        )
+    }
 }
 
 @Composable
@@ -3929,26 +4097,48 @@ fun MichiActivationWallScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(imageVector = Icons.Filled.VpnKey, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(48.dp))
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(MichiOrange.copy(alpha = 0.15f))
+                        .border(1.dp, MichiOrange.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = Icons.Filled.VpnKey, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(36.dp))
+                }
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text(
-                    text = "Dispositivo no activado",
+                    text = "Vincula tu pantalla",
                     color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp
+                    fontWeight = FontWeight.Black,
+                    fontSize = 26.sp,
+                    textAlign = TextAlign.Center
                 )
-                
+
                 Spacer(modifier = Modifier.height(8.dp))
-                
+
                 Text(
-                    text = "Para disfrutar de MichiTV, vincula esta pantalla a tu cuenta.",
+                    text = "Escanea el QR y confirma en Telegram. Sin escribir nada.",
                     color = Color.LightGray,
                     textAlign = TextAlign.Center,
                     fontSize = 14.sp
                 )
-                
-                Spacer(modifier = Modifier.height(24.dp))
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    WallStep(number = "1", label = "Escanea\nel QR")
+                    WallStep(number = "2", label = "Confirma\nen el bot")
+                    WallStep(number = "3", label = "Mira\nsin límites")
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
 
                 val rawBotName = activationInfo.botUsername.removePrefix("@")
                 val deepLink = "https://t.me/${rawBotName}?start=activar_${activationInfo.deviceCode}"
@@ -4050,6 +4240,58 @@ fun MichiActivationWallScreen(
                     Text(activationInfo.deviceCode, color = MichiOrange, fontWeight = FontWeight.Black, fontSize = 26.sp)
                 }
                 Text("Toca el codigo para copiarlo", color = Color.Gray, fontSize = 11.sp)
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Estado en vivo: pulso mientras escucha al bot
+                val awaitingAuto = remember { !TelegramActivationManager.isManualLogout(context) }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MichiCyan.copy(alpha = 0.12f))
+                        .border(1.dp, MichiCyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (awaitingAuto) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "wall_pulse")
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 0.25f,
+                            targetValue = 1.0f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(700, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "wall_pulse_alpha"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00E676).copy(alpha = alpha))
+                        )
+                        Text(
+                            text = "Escuchando al bot en vivo...",
+                            color = MichiCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.TouchApp,
+                            contentDescription = null,
+                            tint = MichiCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Toca comprobar cuando te actives",
+                            color = MichiCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
                 

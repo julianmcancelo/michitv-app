@@ -23,13 +23,12 @@
     "MICHI-528D": {
       "device_code": "MICHI-528D",
       "license_key": "MICHI-VIP-MICHI528D-O0XE",
-      "activated": false,
+      "activated": true,
       "activated_at": "2026-10-09T02:21:19.811Z",
       "expires_at": "2026-11-08T02:21:19.811Z",
       "plan": "VIP MichiTV Pass",
       "tg_user_id": 7995536641,
-      "tg_username": "Jota",
-      "deactivated_at": "2026-10-09T12:05:34.868Z"
+      "tg_username": "Jota"
     },
     "MICHI-84C8": {
       "device_code": "MICHI-84C8",
@@ -37,6 +36,26 @@
       "activated": true,
       "activated_at": "2026-10-09T09:17:04.649Z",
       "expires_at": "2026-11-08T09:17:04.645Z",
+      "plan": "VIP MichiTV Pass",
+      "tg_user_id": 7995536641,
+      "tg_username": "Jota"
+    },
+    "MICHI-E459": {
+      "device_code": "MICHI-E459",
+      "license_key": "MICHI-VIP-MICHIE459-L9YO",
+      "activated": true,
+      "activated_at": "2026-10-10T16:31:10.555Z",
+      "expires_at": "2026-11-09T16:31:10.555Z",
+      "plan": "VIP MichiTV Pass",
+      "tg_user_id": 8004252581,
+      "tg_username": "@Nicomaidanax"
+    },
+    "MICHI-FA5D": {
+      "device_code": "MICHI-FA5D",
+      "license_key": "MICHI-VIP-MICHIFA5D-E6U9",
+      "activated": true,
+      "activated_at": "2026-10-10T16:31:14.704Z",
+      "expires_at": "2026-11-09T16:31:14.704Z",
       "plan": "VIP MichiTV Pass",
       "tg_user_id": 7995536641,
       "tg_username": "Jota"
@@ -68,7 +87,18 @@
         "MICHI-E7CB",
         "MICHI-1D68",
         "MICHI-528D",
-        "MICHI-84C8"
+        "MICHI-84C8",
+        "MICHI-FA5D"
+      ]
+    },
+    "8004252581": {
+      "id": 8004252581,
+      "username": "@Nicomaidanax",
+      "first_seen": "2026-10-10T16:31:09.780Z",
+      "claimed_trial": false,
+      "last_roulette": null,
+      "devices": [
+        "MICHI-E459"
       ]
     }
   },
