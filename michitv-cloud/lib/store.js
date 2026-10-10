@@ -43,11 +43,15 @@ async function findBlob(pathname) {
 async function downloadJson(pathname) {
   try {
     const res = await get(pathname, { access: 'private', cacheControlMaxAge: 0 });
-    if (!res || res.ok === false) return null;
+    if (!res || res.ok === false) {
+      console.error('downloadJson: respuesta no ok para', pathname);
+      return null;
+    }
     if (typeof res.json === 'function') return await res.json();
     const text = typeof res.text === 'function' ? await res.text() : String(res);
     return JSON.parse(text);
   } catch (e) {
+    console.error('downloadJson FAIL', pathname, e && e.message);
     return null; // incluye BlobNotFound: arrancar en blanco
   }
 }
