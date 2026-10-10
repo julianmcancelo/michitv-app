@@ -57,7 +57,7 @@ object TelegramActivationManager {
     private const val KEY_BOT_USERNAME = "bot_username"
     private const val KEY_SERVER_URL = "server_url"
     private const val DEFAULT_BOT = "@MichitvBot"
-    private const val DEFAULT_SERVER = "http://10.0.2.2:3000"
+    private const val DEFAULT_SERVER = "https://michitv-cloud.vercel.app"
 
     fun getDeviceCode(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -158,7 +158,9 @@ object TelegramActivationManager {
 
         val candidates = listOf(
             userServer,
+            "https://michitv-cloud.vercel.app",
             "http://10.0.2.2:3000",
+            "http://192.168.0.25:3000",
             "http://192.168.0.164:3000",
             "http://192.168.0.148:3000",
             "http://127.0.0.1:3000",
@@ -220,7 +222,9 @@ object TelegramActivationManager {
         val userServer = getServerUrl(context)
         val candidates = listOf(
             userServer,
+            "https://michitv-cloud.vercel.app",
             "http://10.0.2.2:3000",
+            "http://192.168.0.25:3000",
             "http://192.168.0.164:3000",
             "http://192.168.0.148:3000",
             "http://127.0.0.1:3000",
