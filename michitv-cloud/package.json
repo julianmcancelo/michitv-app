@@ -1,0 +1,8 @@
+{
+  "name": "michitv-cloud-bot",
+  "version": "2.0.0",
+  "description": "MichiTV Telegram bot en Vercel (webhook + Upstash Redis). Sin dependencias.",
+  "engines": {
+    "node": ">=18"
+  }
+}
