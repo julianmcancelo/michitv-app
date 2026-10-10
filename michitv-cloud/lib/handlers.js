@@ -57,7 +57,10 @@ function mainMenu(isAdmin = false) {
       { text: '📥 Descargar MichiTV APK', callback_data: 'action_download' },
       { text: '🔑 Activar Dispositivo', callback_data: 'action_activate' },
     ],
-    [{ text: '📺 Mis Pantallas (Multidispositivo)', callback_data: 'action_devices' }],
+    [
+      { text: '📺 Código Downloader TV', callback_data: 'action_downloader' },
+      { text: '📺 Mis Pantallas (Multidispositivo)', callback_data: 'action_devices' },
+    ],
     [
       { text: '🎁 7 Días VIP Gratis', callback_data: 'action_trial' },
       { text: '🎟 Canjear Voucher', callback_data: 'action_redeem' },
@@ -136,7 +139,9 @@ async function showInstallationGuide(chatId) {
     `3. Envía el archivo APK de tu celular a la TV y dale a <i>Instalar</i>.\n\n` +
     `<b>MÉTODO 2: Con la App Downloader en TV (Firestick / Android TV) 🌐</b>\n` +
     `1. En tu TV abre la app <b>Downloader</b> (ícono naranja de AFTVnews).\n` +
-    `2. Ingresa la URL de descarga de arriba.\n` +
+    `2. En la barra de dirección ingresa este enlace corto directo:\n` +
+    `👉 <code>tinyurl.com/michitv-apk</code>\n` +
+    `<i>(O el enlace permanente: <code>github.com/julianmcancelo/michitv-app/releases/latest/download/michitv.apk</code>)</i>\n` +
     `3. La descarga comenzará automáticamente y pulsa <i>Instalar</i>.\n\n` +
     `<b>MÉTODO 3: Con Memoria USB / Pendrive 💾</b>\n` +
     `1. Copia el archivo APK a un Pendrive.\n` +
@@ -147,6 +152,32 @@ async function showInstallationGuide(chatId) {
       inline_keyboard: [
         [{ text: '📥 Descargar APK Ahora', url: APK_RELEASE_URL }],
         [{ text: '🔑 Ya la instalé, quiero Activar', callback_data: 'action_activate' }],
+        [{ text: '⬅️ Menú Principal', callback_data: 'action_menu' }],
+      ],
+    },
+  });
+}
+
+async function showDownloaderCode(db, chatId) {
+  const code = (db.config && db.config.downloader_code) || '2858813';
+  const isNumeric = /^\d+$/.test(code);
+  const message =
+    `📺 <b>Código Oficial de Downloader (AFTVnews)</b> 🐾\n\n` +
+    `¡Instala MichiTV en segundos en tu Smart TV, Android TV o Fire TV Stick!\n\n` +
+    `1️⃣ Abre la app <b>Downloader</b> (ícono naranja de AFTVnews) en tu televisor.\n` +
+    `2️⃣ En la casilla de URL o código escribe:\n` +
+    (isNumeric
+      ? `👉 <code>${code}</code> <i>(Código Numérico Directo)</i>\n\n<i>O escribe: <code>tinyurl.com/michitv-apk</code></i>\n`
+      : `👉 <code>${code}</code>\n`) +
+    `3️⃣ Pulsa el botón <b>Go</b>.\n` +
+    `4️⃣ La descarga de MichiTV comenzará en segundos y selecciona <b>Instalar</b>. ¡Listo! 🍿🐱\n\n` +
+    `<i>💡 Consejo: Si no tienes Downloader en tu televisor, puedes instalarlo gratis desde Google Play Store o Amazon Appstore buscando "Downloader".</i>`;
+
+  await sendMessage(chatId, message, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔑 Ya la instalé, quiero Activar', callback_data: 'action_activate' }],
+        [{ text: '📥 Descargar APK Directo', url: APK_RELEASE_URL }],
         [{ text: '⬅️ Menú Principal', callback_data: 'action_menu' }],
       ],
     },
@@ -707,6 +738,27 @@ async function handleMessage(db, msg) {
     await showInstallationGuide(chatId);
     return;
   }
+  if (text === '/downloader' || text === '/codigo' || text === '/code') {
+    await showDownloaderCode(db, chatId);
+    return;
+  }
+  if (text.startsWith('/setdownloader') || text.startsWith('/codigodownloader')) {
+    if (!isAdmin) {
+      await sendMessage(chatId, '⛔ Solo el Jefe Michi (Admin) puede configurar el código de Downloader.');
+      return;
+    }
+    const parts = text.split(/\s+/);
+    const newCode = parts[1]?.trim();
+    if (!newCode) {
+      const current = (db.config && db.config.downloader_code) || '2858813';
+      await sendMessage(chatId, `ℹ️ Código de Downloader actual: <code>${current}</code>\n\nPara cambiarlo escribe:\n<code>/setdownloader 123456</code>`);
+      return;
+    }
+    if (!db.config) db.config = {};
+    db.config.downloader_code = newCode;
+    await sendMessage(chatId, `✅ <b>¡Código de Downloader actualizado con éxito!</b> 🐾\n\nNuevo código activo: <code>${newCode}</code>\n\nAhora todos los usuarios que toquen el botón <b>📺 Código Downloader TV</b> o escriban /downloader verán este código.`);
+    return;
+  }
   if (text === '/prueba' || text === '/demo' || text === '/trial') {
     await handleFreeTrial(db, chatId, userId, username);
     return;
@@ -799,6 +851,8 @@ async function handleCallback(db, query) {
     await editMessageText(chatId, messageId, `🐾 <b>Menú Principal de MichiTV</b>`, { reply_markup: mainMenu(isAdmin) });
   } else if (data === 'action_download') {
     await handleDownloadApk(chatId);
+  } else if (data === 'action_downloader') {
+    await showDownloaderCode(db, chatId);
   } else if (data === 'action_install') {
     await showInstallationGuide(chatId);
   } else if (data === 'action_trial') {

@@ -105,7 +105,8 @@
   "config": {
     "maintenance": false,
     "maintenance_message": "putoo",
-    "maintenance_until": null
+    "maintenance_until": null,
+    "downloader_code": "2858813"
   },
   "support_tickets": {
     "0TT4Z2": {

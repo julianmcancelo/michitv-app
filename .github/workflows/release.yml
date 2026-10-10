@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Tag de la Versión (ej: v1.0.1)'
+        description: 'Tag de la Versión (ej: v1.6.0)'
         required: true
-        default: 'v1.0.1'
+        default: 'v1.6.0'
 
 jobs:
   build-and-release:
@@ -38,15 +38,15 @@ jobs:
           cd kino-tv-app || true
           chmod +x gradlew
 
-      - name: 🔨 Compilar APK Debug y Release
+      - name: 🔨 Compilar APK Release y Debug
         run: |
           if [ -d "kino-tv-app" ]; then
             cd kino-tv-app
           fi
-          # Ignorar org.gradle.java.home local (ruta Windows) y usar el JDK del runner
-          ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --stacktrace
+          # Intentar compilar Release firmado con el keystore incluido; si falla, compilar Debug
+          ./gradlew assembleRelease -Dorg.gradle.java.home="$JAVA_HOME" --stacktrace || ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --stacktrace
 
-      - name: 📝 Preparar Archivo APK para Release
+      - name: 📝 Preparar Archivos APK y Enlaces Cortos
         id: prepare_apk
         run: |
           TAG_NAME="${{ github.ref_name }}"
@@ -54,42 +54,73 @@ jobs:
             TAG_NAME="${{ github.event.inputs.version_tag }}"
           fi
           if [ -z "$TAG_NAME" ]; then
-            TAG_NAME="v1.0.0"
+            TAG_NAME="v1.6.0"
           fi
 
-          APK_PATH=$(find . -name "*.apk" | grep -i "debug" | head -n 1)
+          # Buscar primero el APK Release firmado; si no existe, usar Debug
+          APK_PATH=$(find . -name "*.apk" | grep -i "release" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find . -name "*.apk" | grep -i "debug" | head -n 1)
+          fi
+
           if [ -z "$APK_PATH" ]; then
             echo "❌ No se encontró ningún archivo APK generado."
             exit 1
           fi
 
-          OUTPUT_APK="MichiTV-${TAG_NAME}.apk"
-          cp "$APK_PATH" "$OUTPUT_APK"
-          echo "apk_file=$OUTPUT_APK" >> $GITHUB_OUTPUT
+          VERSIONED_APK="MichiTV-${TAG_NAME}.apk"
+          FIXED_APK="michitv.apk"
+
+          cp "$APK_PATH" "$VERSIONED_APK"
+          cp "$APK_PATH" "$FIXED_APK"
+
+          REPO_URL="https://github.com/${{ github.repository }}"
+          LATEST_DIRECT_URL="${REPO_URL}/releases/latest/download/michitv.apk"
+          TAG_DIRECT_URL="${REPO_URL}/releases/download/${TAG_NAME}/${VERSIONED_APK}"
+
+          # Generar automáticamente enlace acortado en TinyURL para facilitar escritura en TV/Downloader
+          TINY_LATEST=$(curl -s "https://tinyurl.com/api-create.php?url=${LATEST_DIRECT_URL}" || echo "")
+          TINY_TAG=$(curl -s "https://tinyurl.com/api-create.php?url=${TAG_DIRECT_URL}" || echo "")
+
+          echo "apk_versioned=$VERSIONED_APK" >> $GITHUB_OUTPUT
+          echo "apk_fixed=$FIXED_APK" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "✅ APK preparado exitosamente: $OUTPUT_APK"
+          echo "latest_direct=$LATEST_DIRECT_URL" >> $GITHUB_OUTPUT
+          echo "tiny_latest=$TINY_LATEST" >> $GITHUB_OUTPUT
+          echo "tiny_tag=$TINY_TAG" >> $GITHUB_OUTPUT
+
+          echo "✅ APK preparado exitosamente: $VERSIONED_APK y $FIXED_APK"
+          echo "🔗 URL Permanente: $LATEST_DIRECT_URL"
+          echo "🌐 TinyURL Permanente: $TINY_LATEST"
 
       - name: 🚀 Publicar GitHub Release con Asset APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.prepare_apk.outputs.tag_name }}
           name: "🐾 MichiTV ${{ steps.prepare_apk.outputs.tag_name }}"
-          files: ${{ steps.prepare_apk.outputs.apk_file }}
+          files: |
+            ${{ steps.prepare_apk.outputs.apk_versioned }}
+            ${{ steps.prepare_apk.outputs.apk_fixed }}
           generate_release_notes: true
           draft: false
           prerelease: false
           body: |
             ## 🐾 ¡Nueva Versión de MichiTV Disponible! (${{ steps.prepare_apk.outputs.tag_name }})
             
-            ### 🌟 Novedades y Mejoras:
-            - ✨ Soporte nativo para actualización inteligente OTA desde la aplicación.
-            - ✈️ Módulo de activación y vinculación mediante Bot de Telegram.
-            - 🎬 Reproductor cinematográfico con selección de servidores y decodificación ultra rápida con Media3.
-            - 📱 Interfaz adaptativa premium para Smart TVs (Android TV / Fire TV) y Smartphones.
+            ### 🌐 Descarga e Instalación Rápida:
+            - 📺 **App Downloader (Android TV / Fire TV):** Escribe el enlace corto:
+              👉 `http://${{ steps.prepare_apk.outputs.tiny_latest }}`
+            - ⚡ **Descarga Directa Siempre Actualizada (Permanente):**
+              👉 `${{ steps.prepare_apk.outputs.latest_direct }}`
+            - 📦 **Descarga Directa Específica (${{ steps.prepare_apk.outputs.tag_name }}):**
+              👉 `${{ steps.prepare_apk.outputs.tiny_tag }}`
             
-            ### 📥 Instalación:
-            1. Descarga el archivo adjunto `${{ steps.prepare_apk.outputs.apk_file }}`.
-            2. Instálalo en tu dispositivo Android o Smart TV.
-            3. ¡O actualiza directamente desde el menú de Ajustes dentro de MichiTV!
+            ---
+            
+            ### 🌟 Novedades y Mejoras:
+            - ✨ Actualización OTA inteligente desde la app.
+            - 🎬 Reproductor premium con decodificación HLS y soporte de plugins restaurado.
+            - ✈️ Activación y gestión por Telegram Bot (@MichitvBot).
+            - 📱 Interfaz optimizada para pantallas táctiles y Smart TVs.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
