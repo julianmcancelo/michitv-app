@@ -71,6 +71,21 @@ Pasame la URL de tu deploy y actualizo `TelegramActivationManager` para que
 como respaldo). Después se compila la APK y listo: adiós IP local,
 adiós firewall, adiós PC encendida.
 
+## Notas operativas (leer si algo falla)
+
+- **NO reconectar el repo en Vercel sin poner Root Directory = `michitv-cloud`.**
+  Un build desde la raíz genera un deploy vacío que toma producción y voltea
+  el bot (pasó el 2026-10-10: alias 404). Los deploys se hacen a mano con
+  `npx vercel --prod --scope juliancancelos-projects` desde esta carpeta.
+- Si el bot deja de responder: `curl https://michitv-cloud.vercel.app/api/config`
+  debe dar JSON. Si da 404 de plataforma, revisar en
+  `vercel ls` que producción apunte al deploy bueno y usar
+  `vercel promote <url-buena>`.
+- `getWebhookInfo` del bot muestra `last_error_message` si Telegram no puede
+  entregar; con `pending_update_count: 0` está al día.
+- Store extra `michitv-db-pub` (vacío): se puede borrar desde el dashboard
+  (por CLI está bloqueado para agentes).
+
 ## Migrar tus datos actuales (opcional, 2 min)
 
 Si querés conservar dispositivos/vouchers actuales en la nube:
