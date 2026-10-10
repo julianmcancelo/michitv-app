@@ -3,7 +3,7 @@
  * Toda la base como un único JSON + un blob por estado conversacional.
  */
 
-const { put, list, del } = require('@vercel/blob');
+const { put, list, del, getDownloadUrl } = require('@vercel/blob');
 
 const DB_PATH = 'michitv/db.json';
 const STATE_PREFIX = 'michitv/state-';
@@ -40,13 +40,20 @@ async function findBlob(pathname) {
   return blobs.find((b) => b.pathname === pathname) || blobs[0] || null;
 }
 
+async function downloadJson(pathname) {
+  const found = await findBlob(pathname);
+  if (!found) return null;
+  const { url } = await getDownloadUrl(pathname);
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function loadDb() {
   try {
-    const found = await findBlob(DB_PATH);
-    if (!found) return blankDb();
-    const res = await fetch(found.url);
-    if (!res.ok) return blankDb();
-    return normalizeDb(await res.json());
+    const data = await downloadJson(DB_PATH);
+    if (!data) return blankDb();
+    return normalizeDb(data);
   } catch (e) {
     console.error('loadDb:', e.message);
     return blankDb();
@@ -54,9 +61,8 @@ async function loadDb() {
 }
 
 async function saveDb(db) {
-  // Nota: bucket público (la misma base ya vive en el repo público).
   await put(DB_PATH, JSON.stringify(db), {
-    access: 'public',
+    access: 'private',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: 'application/json',
@@ -67,19 +73,16 @@ async function saveDb(db) {
 
 async function getState(chatId) {
   try {
-    const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
-    if (!found) return null;
-    const res = await fetch(found.url);
-    if (!res.ok) return null;
-    const obj = await res.json();
-    if (!obj || !obj.value) return null;
-    if (obj.exp && Date.now() > obj.exp) {
+    const data = await downloadJson(`${STATE_PREFIX}${chatId}.json`);
+    if (!data || !data.value) return null;
+    if (data.exp && Date.now() > data.exp) {
       try {
-        await del(found.url);
+        const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
+        if (found) await del(found.url);
       } catch (e) {}
       return null;
     }
-    return obj.value;
+    return data.value;
   } catch (e) {
     return null;
   }
@@ -87,7 +90,7 @@ async function getState(chatId) {
 
 async function setState(chatId, state) {
   await put(`${STATE_PREFIX}${chatId}.json`, JSON.stringify({ value: state, exp: Date.now() + STATE_TTL_MS }), {
-    access: 'public',
+    access: 'private',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: 'application/json',
