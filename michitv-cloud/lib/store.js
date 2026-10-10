@@ -1,13 +1,26 @@
 /**
- * Persistencia sobre Vercel Blob (SDK oficial, auth OIDC automática).
+ * Persistencia sobre Vercel Blob vía REST crudo (sin SDK).
  * Toda la base como un único JSON + un blob por estado conversacional.
+ * Probado: GET/PUT/DELETE contra la API con BLOB_READ_WRITE_TOKEN.
  */
-
-const { put, list, del, get } = require('@vercel/blob');
 
 const DB_PATH = 'michitv/db.json';
 const STATE_PREFIX = 'michitv/state-';
 const STATE_TTL_MS = 10 * 60 * 1000;
+const API_VERSION = '12';
+
+function token() {
+  const t = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!t) throw new Error('Falta BLOB_READ_WRITE_TOKEN en las variables de entorno.');
+  return t;
+}
+
+function storeHost() {
+  const id = String(process.env.BLOB_STORE_ID || '');
+  const short = id.replace(/^store_/i, '').toLowerCase();
+  if (!short) throw new Error('Falta BLOB_STORE_ID en las variables de entorno.');
+  return `https://${short}.private.blob.vercel-storage.com`;
+}
 
 function blankDb() {
   return {
@@ -35,29 +48,37 @@ function normalizeDb(db) {
   };
 }
 
-async function findBlob(pathname) {
-  const { blobs } = await list({ prefix: pathname, limit: 5 });
-  return blobs.find((b) => b.pathname === pathname) || blobs[0] || null;
+async function rawGet(pathname) {
+  const res = await fetch(`${storeHost()}/${pathname}`, {
+    headers: { Authorization: `Bearer ${token()}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET ${pathname}: HTTP ${res.status}`);
+  return res.json();
 }
 
-async function downloadJson(pathname) {
-  try {
-    const res = await get(pathname, { access: 'private', cacheControlMaxAge: 0 });
-    if (res == null) return null;
-    // El SDK devuelve el JSON ya parseado (objeto)
-    if (typeof res === 'object' && typeof res.json !== 'function' && typeof res.text !== 'function') return res;
-    if (typeof res.json === 'function') return await res.json();
-    const text = typeof res.text === 'function' ? await res.text() : String(res);
-    return JSON.parse(text);
-  } catch (e) {
-    console.error('downloadJson FAIL', pathname, e && e.message);
-    return null; // incluye BlobNotFound: arrancar en blanco
+async function rawPut(pathname, obj) {
+  const res = await fetch(`https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token()}`,
+      'x-content-type': 'application/json',
+      'x-api-version': API_VERSION,
+      'x-vercel-blob-access': 'private',
+      'x-add-random-suffix': '0',
+      'x-allow-overwrite': '1',
+    },
+    body: JSON.stringify(obj),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`PUT ${pathname}: HTTP ${res.status} ${txt.slice(0, 120)}`);
   }
 }
 
 async function loadDb() {
   try {
-    const data = await downloadJson(DB_PATH);
+    const data = await rawGet(DB_PATH);
     if (!data) return blankDb();
     return normalizeDb(data);
   } catch (e) {
@@ -67,27 +88,16 @@ async function loadDb() {
 }
 
 async function saveDb(db) {
-  await put(DB_PATH, JSON.stringify(db), {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json',
-  });
+  await rawPut(DB_PATH, db);
 }
 
 // ---- Estados conversacionales (TTL manual de 10 min) ----
 
 async function getState(chatId) {
   try {
-    const data = await downloadJson(`${STATE_PREFIX}${chatId}.json`);
+    const data = await rawGet(`${STATE_PREFIX}${chatId}.json`);
     if (!data || !data.value) return null;
-    if (data.exp && Date.now() > data.exp) {
-      try {
-        const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
-        if (found) await del(found.url);
-      } catch (e) {}
-      return null;
-    }
+    if (data.exp && Date.now() > data.exp) return null;
     return data.value;
   } catch (e) {
     return null;
@@ -95,18 +105,13 @@ async function getState(chatId) {
 }
 
 async function setState(chatId, state) {
-  await put(`${STATE_PREFIX}${chatId}.json`, JSON.stringify({ value: state, exp: Date.now() + STATE_TTL_MS }), {
-    access: 'private',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json',
-  });
+  await rawPut(`${STATE_PREFIX}${chatId}.json`, { value: state, exp: Date.now() + STATE_TTL_MS });
 }
 
 async function clearState(chatId) {
+  // Sin borrado físico: el TTL manual lo invalida. Best-effort, nunca falla.
   try {
-    const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
-    if (found) await del(found.url);
+    await rawPut(`${STATE_PREFIX}${chatId}.json`, { value: null, exp: 0 });
   } catch (e) {}
 }
 
