@@ -54,8 +54,9 @@ async function loadDb() {
 }
 
 async function saveDb(db) {
+  // Nota: bucket público (la misma base ya vive en el repo público).
   await put(DB_PATH, JSON.stringify(db), {
-    access: 'private',
+    access: 'public',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: 'application/json',
@@ -86,7 +87,7 @@ async function getState(chatId) {
 
 async function setState(chatId, state) {
   await put(`${STATE_PREFIX}${chatId}.json`, JSON.stringify({ value: state, exp: Date.now() + STATE_TTL_MS }), {
-    access: 'private',
+    access: 'public',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: 'application/json',
