@@ -165,10 +165,10 @@ fun MainAppNavigation() {
         }
     }
 
-    // Dialogo de novedades v2.0.0 (una vez por version)
+    // Dialogo de novedades v2.0.1 (una vez por version)
     var showWhatsNew by remember {
         val prefs = context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-        mutableStateOf(prefs.getString("last_seen_version", "") != "2.0.0")
+        mutableStateOf(prefs.getString("last_seen_version", "") != "2.0.1")
     }
 
     if (!activationInfo.isActivated) {
@@ -188,7 +188,7 @@ fun MainAppNavigation() {
         return
     }
 
-    // Novedades v2.0.0 al iniciar (el dialogo decide si no mostrar mas)
+    // Novedades v2.0.1 al iniciar (el dialogo decide si no mostrar mas)
     if (showWhatsNew) {
         MichiWhatsNewDialog(
             onDismiss = { showWhatsNew = false }
@@ -3951,7 +3951,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = "MichiTV 2.0.0",
+                                text = "MichiTV 2.0.1",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 22.sp,
@@ -4020,7 +4020,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                         onClick = {
                             if (hideForever) {
                                 context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-                                    .edit().putString("last_seen_version", "2.0.0").apply()
+                                    .edit().putString("last_seen_version", "2.0.1").apply()
                             }
                             onDismiss()
                         },
@@ -4321,6 +4321,91 @@ fun MichiActivationWallScreen(
                         }
                     }
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Servidor del bot en el muro: si la TV no llega al bot (cambió la IP),
+                // se corrige acá mismo sin entrar a Ajustes
+                var showWallServer by remember { mutableStateOf(false) }
+                var wallServerInput by remember { mutableStateOf(TelegramActivationManager.getServerUrl(context)) }
+                TextButton(
+                    onClick = { showWallServer = !showWallServer },
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Ajustes avanzados",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                    Icon(
+                        imageVector = if (showWallServer) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                if (showWallServer) {
+                    Text(
+                        text = "IP del servidor del bot en tu red WiFi (solo si no activa):",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = wallServerInput,
+                            onValueChange = { wallServerInput = it },
+                            placeholder = { Text("http://192.168.0.25:3000", fontSize = 13.sp, color = Color.Gray) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MichiCyan,
+                                unfocusedBorderColor = Color.Gray,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        Button(
+                            onClick = {
+                                val clean = wallServerInput.trim().removeSuffix("/")
+                                if (clean.isNotBlank()) {
+                                    TelegramActivationManager.setServerUrl(context, clean)
+                                    RemoteConfigManager.setServerUrl(context, clean)
+                                    wallServerInput = clean
+                                    Toast.makeText(context, "Servidor guardado. Comprobando...", Toast.LENGTH_SHORT).show()
+                                    scope.launch {
+                                        isCheckingWall = true
+                                        TelegramActivationManager.clearManualLogout(context)
+                                        val updated = withContext(Dispatchers.IO) {
+                                            TelegramActivationManager.checkRemoteStatus(context)
+                                        }
+                                        isCheckingWall = false
+                                        if (updated != null && updated.isActivated) onActivated()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                        ) {
+                            Text(text = "OK", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
