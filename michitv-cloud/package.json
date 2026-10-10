@@ -4,5 +4,8 @@
   "description": "MichiTV Telegram bot en Vercel (webhook + Upstash Redis). Sin dependencias.",
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@vercel/blob": "^2.8.1"
   }
 }

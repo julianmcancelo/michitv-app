@@ -1,28 +1,13 @@
 /**
- * Capa de persistencia sobre Upstash Redis (HTTP REST, sin conexiones).
- * Guarda TODA la base como un único JSON (misma forma que database.json local).
+ * Persistencia sobre Vercel Blob (SDK oficial, auth OIDC automática).
+ * Toda la base como un único JSON + un blob por estado conversacional.
  */
 
-const DB_KEY = 'michitv:db';
+const { put, list, del } = require('@vercel/blob');
 
-function redisEnv() {
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-  if (!url || !token) {
-    throw new Error('Faltan UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN en las variables de entorno.');
-  }
-  return { url: url.replace(/\/$/, ''), token };
-}
-
-async function redis(cmd, ...args) {
-  const { url, token } = redisEnv();
-  const res = await fetch(`${url}/${cmd}/${args.map((a) => encodeURIComponent(a)).join('/')}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Redis ${cmd} falló: ${res.status}`);
-  const data = await res.json();
-  return data.result;
-}
+const DB_PATH = 'michitv/db.json';
+const STATE_PREFIX = 'michitv/state-';
+const STATE_TTL_MS = 10 * 60 * 1000;
 
 function blankDb() {
   return {
@@ -50,11 +35,18 @@ function normalizeDb(db) {
   };
 }
 
+async function findBlob(pathname) {
+  const { blobs } = await list({ prefix: pathname, limit: 5 });
+  return blobs.find((b) => b.pathname === pathname) || blobs[0] || null;
+}
+
 async function loadDb() {
   try {
-    const raw = await redis('get', DB_KEY);
-    if (!raw) return blankDb();
-    return normalizeDb(typeof raw === 'string' ? JSON.parse(raw) : raw);
+    const found = await findBlob(DB_PATH);
+    if (!found) return blankDb();
+    const res = await fetch(found.url);
+    if (!res.ok) return blankDb();
+    return normalizeDb(await res.json());
   } catch (e) {
     console.error('loadDb:', e.message);
     return blankDb();
@@ -62,39 +54,49 @@ async function loadDb() {
 }
 
 async function saveDb(db) {
-  const payload = JSON.stringify(db);
-  // Upstash REST: SET key value (el valor va en el path, encodeado)
-  const { url, token } = redisEnv();
-  const res = await fetch(`${url}/set/${DB_KEY}/${encodeURIComponent(payload)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  await put(DB_PATH, JSON.stringify(db), {
+    access: 'private',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/json',
   });
-  if (!res.ok) throw new Error(`Redis set falló: ${res.status}`);
 }
 
-// ---- Estados conversacionales (sobreviven entre instancias, 10 min TTL) ----
-
-const STATE_TTL_S = 600;
+// ---- Estados conversacionales (TTL manual de 10 min) ----
 
 async function getState(chatId) {
   try {
-    const raw = await redis('get', `michitv:state:${chatId}`);
-    return raw ? JSON.parse(raw) : null;
+    const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
+    if (!found) return null;
+    const res = await fetch(found.url);
+    if (!res.ok) return null;
+    const obj = await res.json();
+    if (!obj || !obj.value) return null;
+    if (obj.exp && Date.now() > obj.exp) {
+      try {
+        await del(found.url);
+      } catch (e) {}
+      return null;
+    }
+    return obj.value;
   } catch (e) {
     return null;
   }
 }
 
 async function setState(chatId, state) {
-  const { url, token } = redisEnv();
-  const payload = encodeURIComponent(JSON.stringify(state));
-  await fetch(`${url}/set/${`michitv:state:${chatId}`}/${payload}/EX/${STATE_TTL_S}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  await put(`${STATE_PREFIX}${chatId}.json`, JSON.stringify({ value: state, exp: Date.now() + STATE_TTL_MS }), {
+    access: 'private',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/json',
   });
 }
 
 async function clearState(chatId) {
   try {
-    await redis('del', `michitv:state:${chatId}`);
+    const found = await findBlob(`${STATE_PREFIX}${chatId}.json`);
+    if (found) await del(found.url);
   } catch (e) {}
 }
 
