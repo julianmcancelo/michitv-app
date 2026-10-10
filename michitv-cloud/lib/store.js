@@ -43,10 +43,9 @@ async function findBlob(pathname) {
 async function downloadJson(pathname) {
   try {
     const res = await get(pathname, { access: 'private', cacheControlMaxAge: 0 });
-    if (!res || res.ok === false) {
-      console.error('downloadJson: respuesta no ok para', pathname);
-      return null;
-    }
+    if (res == null) return null;
+    // El SDK devuelve el JSON ya parseado (objeto)
+    if (typeof res === 'object' && typeof res.json !== 'function' && typeof res.text !== 'function') return res;
     if (typeof res.json === 'function') return await res.json();
     const text = typeof res.text === 'function' ? await res.text() : String(res);
     return JSON.parse(text);
