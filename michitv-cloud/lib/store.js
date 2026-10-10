@@ -3,7 +3,7 @@
  * Toda la base como un único JSON + un blob por estado conversacional.
  */
 
-const { put, list, del, getDownloadUrl } = require('@vercel/blob');
+const { put, list, del, get } = require('@vercel/blob');
 
 const DB_PATH = 'michitv/db.json';
 const STATE_PREFIX = 'michitv/state-';
@@ -41,12 +41,15 @@ async function findBlob(pathname) {
 }
 
 async function downloadJson(pathname) {
-  const found = await findBlob(pathname);
-  if (!found) return null;
-  const { url } = await getDownloadUrl(pathname);
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await get(pathname, { access: 'private', cacheControlMaxAge: 0 });
+    if (!res || res.ok === false) return null;
+    if (typeof res.json === 'function') return await res.json();
+    const text = typeof res.text === 'function' ? await res.text() : String(res);
+    return JSON.parse(text);
+  } catch (e) {
+    return null; // incluye BlobNotFound: arrancar en blanco
+  }
 }
 
 async function loadDb() {
