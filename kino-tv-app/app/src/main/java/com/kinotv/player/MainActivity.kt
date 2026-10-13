@@ -86,6 +86,7 @@ enum class ScreenNav {
     MOVIES,
     SERIES,
     LIVE_TV,
+    DRIVE,
     SEARCH,
     PLUGINS,
     SETTINGS
@@ -218,10 +219,10 @@ fun MainAppNavigation() {
         }
     }
 
-    // Dialogo de novedades v2.1.0 (una vez por version)
+    // Dialogo de novedades v2.2.0 (una vez por version)
     var showWhatsNew by remember {
         val prefs = context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-        mutableStateOf(prefs.getString("last_seen_version", "") != "2.1.0")
+        mutableStateOf(prefs.getString("last_seen_version", "") != "2.2.0")
     }
 
     if (!activationInfo.isActivated) {
@@ -310,6 +311,9 @@ fun MainAppNavigation() {
                             ScreenNav.LIVE_TV -> TvLiveScreen(onPlayChannel = { url, headers, name ->
                                 playingStream = PlayRequest(url, headers, name)
                             })
+                            ScreenNav.DRIVE -> TvDriveScreen(onPlayStream = { req ->
+                                playingStream = req
+                            })
                             ScreenNav.SEARCH -> TvSearchScreen(onOpenItem = { openedItem = it })
                             ScreenNav.PLUGINS -> TvPluginsScreen()
                             ScreenNav.SETTINGS -> TvSettingsScreen(
@@ -346,6 +350,9 @@ fun MainAppNavigation() {
                             ScreenNav.SERIES -> TvSeriesScreen(onOpenItem = { openedItem = it })
                             ScreenNav.LIVE_TV -> TvLiveScreen(onPlayChannel = { url, headers, name ->
                                 playingStream = PlayRequest(url, headers, name)
+                            })
+                            ScreenNav.DRIVE -> TvDriveScreen(onPlayStream = { req ->
+                                playingStream = req
                             })
                             ScreenNav.SEARCH -> TvSearchScreen(onOpenItem = { openedItem = it })
                             ScreenNav.PLUGINS -> TvPluginsScreen()
@@ -466,6 +473,12 @@ fun TvSidebar(
             label = "En Vivo",
             isSelected = selectedScreen == ScreenNav.LIVE_TV,
             onClick = { onSelectScreen(ScreenNav.LIVE_TV) }
+        )
+        SidebarIcon(
+            icon = Icons.Default.Cloud,
+            label = "Michi Drive",
+            isSelected = selectedScreen == ScreenNav.DRIVE,
+            onClick = { onSelectScreen(ScreenNav.DRIVE) }
         )
         SidebarIcon(
             icon = Icons.Default.Extension,
@@ -4067,7 +4080,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = "MichiTV 2.1.0",
+                                text = "MichiTV 2.2.0",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 22.sp,
@@ -4082,28 +4095,28 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     MichiWhatsNewRow(
+                        icon = Icons.Filled.Cloud,
+                        tint = MichiCyan,
+                        title = "Nueva Sección: Michi Drive",
+                        desc = "Reproduce películas y series desde Google Drive (Index / Cloudflare Workers) sin límites."
+                    )
+                    MichiWhatsNewRow(
                         icon = Icons.Filled.Movie,
                         tint = MichiOrange,
                         title = "Auto-Preview de Tráilers",
                         desc = "Previsualiza avances en el banner principal en silencio y sin cortes."
                     )
                     MichiWhatsNewRow(
-                        icon = Icons.Filled.NotificationsActive,
-                        tint = MichiCyan,
-                        title = "Anuncios en Vivo desde Telegram",
-                        desc = "Avisos y comunicados instantáneos en pantalla."
-                    )
-                    MichiWhatsNewRow(
                         icon = Icons.Filled.NightlightRound,
                         tint = Color(0xFFB388FF),
-                        title = "Salvapantallas OLED Cinemático",
+                        title = "Salvapantallas OLED",
                         desc = "Reloj digital ambiental y fondos 4K tras 3 minutos de inactividad."
                     )
                     MichiWhatsNewRow(
-                        icon = Icons.Filled.QrCode2,
+                        icon = Icons.Filled.NotificationsActive,
                         tint = Color(0xFF00E676),
-                        title = "Vinculación QR y Estabilidad",
-                        desc = "Activación instantánea y reproducción ultra fluida."
+                        title = "Anuncios en Vivo",
+                        desc = "Avisos flotantes instantáneos en pantalla desde Telegram."
                     )
 
                     Row(
@@ -4130,7 +4143,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                         onClick = {
                             if (hideForever) {
                                 context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-                                    .edit().putString("last_seen_version", "2.1.0").apply()
+                                    .edit().putString("last_seen_version", "2.2.0").apply()
                             }
                             onDismiss()
                         },
@@ -4823,3 +4836,443 @@ fun MichiScreensaver(
         }
     }
 }
+
+// =====================================================================
+// SECCIÓN EXCLUSIVA: MICHI DRIVE (STREAMING DESDE GOOGLE DRIVE / INDEX)
+// =====================================================================
+data class DriveItem(
+    val id: String,
+    val name: String,
+    val isFolder: Boolean,
+    val size: Long = 0L,
+    val streamUrl: String? = null
+)
+
+@Composable
+fun TvDriveScreen(
+    onPlayStream: (PlayRequest) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("michi_drive_prefs", android.content.Context.MODE_PRIVATE) }
+
+    var indexUrl by remember {
+        mutableStateOf(prefs.getString("drive_index_url", "") ?: "")
+    }
+    var currentPath by remember { mutableStateOf("/") }
+    var items by remember { mutableStateOf<List<DriveItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showConfigDialog by remember { mutableStateOf(false) }
+    var manualLinkInput by remember { mutableStateOf("") }
+    var isResolvingManualLink by remember { mutableStateOf(false) }
+
+    val serverBase = RemoteConfigManager.getServerUrl(context)
+
+    fun loadPath(path: String) {
+        if (indexUrl.isBlank()) {
+            items = emptyList()
+            return
+        }
+        isLoading = true
+        errorMessage = null
+        currentPath = path
+
+        scope.launch {
+            try {
+                val encodedIndex = java.net.URLEncoder.encode(indexUrl, "UTF-8")
+                val encodedPath = java.net.URLEncoder.encode(path, "UTF-8")
+                val targetUrl = "$serverBase/api/drive?action=browse&index=$encodedIndex&path=$encodedPath"
+
+                val jsonStr = withContext(Dispatchers.IO) {
+                    val conn = (java.net.URL(targetUrl).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000
+                        readTimeout = 8000
+                    }
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.bufferedReader().use { it.readText() }
+                    } else null
+                }
+
+                if (jsonStr != null) {
+                    val root = org.json.JSONObject(jsonStr)
+                    val rawItems = root.optJSONArray("items")
+                    val parsed = mutableListOf<DriveItem>()
+                    if (rawItems != null) {
+                        for (i in 0 until rawItems.length()) {
+                            val obj = rawItems.getJSONObject(i)
+                            parsed.add(
+                                DriveItem(
+                                    id = obj.optString("id", obj.optString("name")),
+                                    name = obj.optString("name"),
+                                    isFolder = obj.optBoolean("isFolder", false),
+                                    size = obj.optLong("size", 0L),
+                                    streamUrl = if (obj.has("link") && !obj.isNull("link")) obj.optString("link") else null
+                                )
+                            )
+                        }
+                    }
+                    items = parsed.sortedWith(compareBy({ !it.isFolder }, { it.name.lowercase() }))
+                } else {
+                    errorMessage = "No se pudo conectar con el Index. Revisa la URL."
+                }
+            } catch (e: Exception) {
+                errorMessage = "Error al conectar: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(indexUrl) {
+        if (indexUrl.isNotBlank()) {
+            loadPath("/")
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+    ) {
+        // Cabecera de Michi Drive
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MichiCyan.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(imageVector = Icons.Default.Cloud, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(22.dp))
+                    }
+                    Text(
+                        text = "Michi Drive",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontFamily = OutfitFontFamily
+                    )
+                    MichiBadge(text = "EXCLUSIVO", isAccent = true)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (indexUrl.isNotBlank()) "Explorando: $currentPath" else "Conecta tu Google Drive Index o reproduce por enlace directo",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = OutfitFontFamily
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (currentPath != "/" && currentPath.isNotBlank()) {
+                    MichiButton(
+                        text = "↑ Subir Carpeta",
+                        onClick = {
+                            val parent = currentPath.removeSuffix("/").substringBeforeLast("/", "")
+                            loadPath(if (parent.isBlank()) "/" else parent)
+                        }
+                    )
+                }
+                MichiButton(
+                    text = "⚙ Servidor / Enlace",
+                    isPrimary = indexUrl.isBlank(),
+                    onClick = { showConfigDialog = true }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (indexUrl.isBlank()) {
+            // Pantalla de Bienvenida / Configuración de Drive
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, MichiCyan.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.fillMaxWidth(0.8f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MichiCyan.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(imageVector = Icons.Default.CloudSync, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(38.dp))
+                    }
+                    Text(
+                        text = "Conecta tu Servidor Privado de Google Drive",
+                        fontFamily = OutfitFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Usa Cloudflare Workers (GoIndex / GDIndex) o pega un enlace de Google Drive para reproducir películas y series en 4K/1080p sin límites.",
+                        fontFamily = OutfitFontFamily,
+                        fontSize = 14.sp,
+                        color = Color.LightGray,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    MichiButton(
+                        text = "Configurar Servidor Drive",
+                        isPrimary = true,
+                        onClick = { showConfigDialog = true }
+                    )
+                }
+            }
+        } else if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = MichiCyan)
+            }
+        } else if (errorMessage != null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(text = errorMessage!!, color = Color(0xFFFF5252), fontFamily = OutfitFontFamily, fontSize = 15.sp)
+                    MichiButton(text = "Reintentar ↻", isPrimary = true, onClick = { loadPath(currentPath) })
+                }
+            }
+        } else if (items.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = "Esta carpeta está vacía.", color = Color.Gray, fontFamily = OutfitFontFamily)
+            }
+        } else {
+            // Cuadrícula de Archivos y Carpetas de Drive
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(160.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 32.dp)
+            ) {
+                items(items) { item ->
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isFocused by interactionSource.collectIsFocusedAsState()
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = if (isFocused) 2.dp else 1.dp,
+                                color = if (isFocused) MichiCyan else MaterialTheme.colorScheme.outline,
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .focusable(interactionSource = interactionSource)
+                            .clickable(interactionSource = interactionSource, indication = null) {
+                                if (item.isFolder) {
+                                    val nextPath = if (currentPath == "/") "/${item.name}" else "$currentPath/${item.name}"
+                                    loadPath(nextPath)
+                                } else {
+                                    val streamUrl = item.streamUrl
+                                    if (!streamUrl.isNullOrBlank()) {
+                                        onPlayStream(
+                                            PlayRequest(
+                                                url = streamUrl,
+                                                title = item.name
+                                            )
+                                        )
+                                    } else {
+                                        Toast.makeText(context, "No se encontró enlace directo para este archivo", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(if (item.isFolder) MichiOrange.copy(alpha = 0.15f) else MichiCyan.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (item.isFolder) Icons.Default.Folder else Icons.Default.Movie,
+                                    contentDescription = null,
+                                    tint = if (item.isFolder) MichiOrange else MichiCyan,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = item.name,
+                                fontFamily = OutfitFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
+                            if (!item.isFolder && item.size > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val sizeMb = item.size / (1024 * 1024)
+                                val sizeText = if (sizeMb > 1024) "%.1f GB".format(sizeMb / 1024.0) else "$sizeMb MB"
+                                Text(
+                                    text = sizeText,
+                                    fontFamily = OutfitFontFamily,
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal de Configuración de Servidor / Reproducción Directa
+    if (showConfigDialog) {
+        var tempIndex by remember { mutableStateOf(indexUrl) }
+
+        AlertDialog(
+            onDismissRequest = { showConfigDialog = false },
+            containerColor = Color(0xFF161822),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(text = "Configuración de Michi Drive", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "1. Servidor Cloudflare Worker (Drive Index):",
+                        color = MichiCyan,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = tempIndex,
+                        onValueChange = { tempIndex = it },
+                        placeholder = { Text("https://tu-worker.workers.dev", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MichiCyan,
+                            unfocusedBorderColor = Color.DarkGray,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "2. O reproduce un enlace directo de Google Drive:",
+                        color = MichiOrange,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = manualLinkInput,
+                        onValueChange = { manualLinkInput = it },
+                        placeholder = { Text("https://drive.google.com/file/d/...", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MichiOrange,
+                            unfocusedBorderColor = Color.DarkGray,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    if (manualLinkInput.isNotBlank()) {
+                        Button(
+                            onClick = {
+                                val match = Regex("/d/([a-zA-Z0-9_-]+)").find(manualLinkInput)
+                                    ?: Regex("id=([a-zA-Z0-9_-]+)").find(manualLinkInput)
+                                val fileId = match?.groupValues?.get(1)
+                                if (fileId != null) {
+                                    isResolvingManualLink = true
+                                    scope.launch {
+                                        try {
+                                            val streamRes = withContext(Dispatchers.IO) {
+                                                val url = "$serverBase/api/drive?action=stream&id=$fileId"
+                                                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                                                if (conn.responseCode == 200) {
+                                                    conn.inputStream.bufferedReader().use { it.readText() }
+                                                } else null
+                                            }
+                                            isResolvingManualLink = false
+                                            if (streamRes != null) {
+                                                val obj = org.json.JSONObject(streamRes)
+                                                val directUrl = obj.optString("url")
+                                                if (directUrl.isNotBlank()) {
+                                                    showConfigDialog = false
+                                                    onPlayStream(
+                                                        PlayRequest(
+                                                            url = directUrl,
+                                                            title = "Google Drive Video"
+                                                        )
+                                                    )
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "No se pudo obtener el stream directo", Toast.LENGTH_LONG).show()
+                                            }
+                                        } catch (e: Exception) {
+                                            isResolvingManualLink = false
+                                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                } else {
+                                    Toast.makeText(context, "ID de archivo no reconocido", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MichiOrange),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isResolvingManualLink) "Resolviendo..." else "▶ Reproducir este Enlace Directo", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = tempIndex.trim().removeSuffix("/")
+                        indexUrl = clean
+                        prefs.edit().putString("drive_index_url", clean).apply()
+                        showConfigDialog = false
+                        if (clean.isNotBlank()) {
+                            loadPath("/")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MichiCyan),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Guardar Servidor", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfigDialog = false }) {
+                    Text("Cancelar", color = Color.Gray)
+                }
+            }
+        )
+    }
+}
+

@@ -1,4 +1,4 @@
-﻿package com.kinotv.player.ui.components
+package com.kinotv.player.ui.components
 
 import androidx.compose.material3.MaterialTheme
 
@@ -442,7 +442,7 @@ fun MichiBottomNav(
         Triple(ScreenNav.HOME, Icons.Default.Home, "Inicio"),
         Triple(ScreenNav.MOVIES, Icons.Default.Movie, "Películas"),
         Triple(ScreenNav.SERIES, Icons.Default.Tv, "Series"),
-        Triple(ScreenNav.LIVE_TV, Icons.Default.LiveTv, "En Vivo"),
+        Triple(ScreenNav.DRIVE, Icons.Default.Cloud, "Drive"),
         Triple(ScreenNav.SETTINGS, Icons.Default.Settings, "Ajustes")
     )
 
