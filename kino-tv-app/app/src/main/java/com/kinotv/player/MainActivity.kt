@@ -4877,15 +4877,28 @@ fun TvDriveScreen(
         isCinemaLoading = true
         scope.launch {
             try {
-                val targetUrl = "$serverBase/api/cinema/catalog"
                 val jsonStr = withContext(Dispatchers.IO) {
-                    val conn = (java.net.URL(targetUrl).openConnection() as java.net.HttpURLConnection).apply {
-                        connectTimeout = 8000
-                        readTimeout = 8000
+                    val urlsToTry = listOf(
+                        "$serverBase/api/status?action=cinema_catalog",
+                        "$serverBase/api/cinema/catalog",
+                        "$serverBase/api/cinema"
+                    )
+                    var result: String? = null
+                    for (u in urlsToTry) {
+                        try {
+                            val conn = (java.net.URL(u).openConnection() as java.net.HttpURLConnection).apply {
+                                connectTimeout = 6000
+                                readTimeout = 6000
+                            }
+                            if (conn.responseCode == 200) {
+                                result = conn.inputStream.bufferedReader().use { it.readText() }
+                                if (result.isNotBlank() && result.contains("items")) break
+                            }
+                        } catch (e: Exception) {
+                            // try next url
+                        }
                     }
-                    if (conn.responseCode == 200) {
-                        conn.inputStream.bufferedReader().use { it.readText() }
-                    } else null
+                    result
                 }
                 if (jsonStr != null) {
                     val root = org.json.JSONObject(jsonStr)
@@ -4939,11 +4952,25 @@ fun TvDriveScreen(
                 scope.launch {
                     try {
                         val directRes = withContext(Dispatchers.IO) {
-                            val u = "$serverBase/api/drive?action=stream&id=$fileId"
-                            val conn = java.net.URL(u).openConnection() as java.net.HttpURLConnection
-                            if (conn.responseCode == 200) {
-                                conn.inputStream.bufferedReader().use { it.readText() }
-                            } else null
+                            val urls = listOf(
+                                "$serverBase/api/status?action=drive_stream&id=$fileId",
+                                "$serverBase/api/drive?action=stream&id=$fileId"
+                            )
+                            var res: String? = null
+                            for (u in urls) {
+                                try {
+                                    val conn = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+                                    conn.connectTimeout = 6000
+                                    conn.readTimeout = 6000
+                                    if (conn.responseCode == 200) {
+                                        res = conn.inputStream.bufferedReader().use { it.readText() }
+                                        if (res.isNotBlank()) break
+                                    }
+                                } catch (e: Exception) {
+                                    // try next
+                                }
+                            }
+                            res
                         }
                         if (directRes != null) {
                             val obj = org.json.JSONObject(directRes)
@@ -4978,16 +5005,28 @@ fun TvDriveScreen(
             try {
                 val encodedIndex = java.net.URLEncoder.encode(indexUrl, "UTF-8")
                 val encodedPath = java.net.URLEncoder.encode(path, "UTF-8")
-                val targetUrl = "$serverBase/api/drive?action=browse&index=$encodedIndex&path=$encodedPath"
 
                 val jsonStr = withContext(Dispatchers.IO) {
-                    val conn = (java.net.URL(targetUrl).openConnection() as java.net.HttpURLConnection).apply {
-                        connectTimeout = 8000
-                        readTimeout = 8000
+                    val urls = listOf(
+                        "$serverBase/api/status?action=drive_browse&index=$encodedIndex&path=$encodedPath",
+                        "$serverBase/api/drive?action=browse&index=$encodedIndex&path=$encodedPath"
+                    )
+                    var res: String? = null
+                    for (targetUrl in urls) {
+                        try {
+                            val conn = (java.net.URL(targetUrl).openConnection() as java.net.HttpURLConnection).apply {
+                                connectTimeout = 8000
+                                readTimeout = 8000
+                            }
+                            if (conn.responseCode == 200) {
+                                res = conn.inputStream.bufferedReader().use { it.readText() }
+                                if (res.isNotBlank()) break
+                            }
+                        } catch (e: Exception) {
+                            // try next
+                        }
                     }
-                    if (conn.responseCode == 200) {
-                        conn.inputStream.bufferedReader().use { it.readText() }
-                    } else null
+                    res
                 }
 
                 if (jsonStr != null) {
