@@ -6,6 +6,7 @@
 
 const { sendMessage, sendChatAction, editMessageText, answerCallbackQuery, sendRandomCatSticker, tgCall } = require('./tg');
 const { loadDb, saveDb, getState, setState, clearState } = require('./store');
+const { searchCinemetaMeta } = require('./meta');
 
 function cfg() {
   return {
@@ -567,7 +568,10 @@ async function showAdminPanel(db, chatId) {
             { text: '🎟 Voucher 30D', callback_data: 'admin_v30' },
             { text: '🎟 Voucher 90D', callback_data: 'admin_v90' },
           ],
-          [{ text: '🎟 Voucher 1 Año', callback_data: 'admin_v365' }],
+          [
+            { text: '🎬 Publicar Película/Serie', callback_data: 'action_add_media' },
+            { text: '📋 Catálogo Privado', callback_data: 'action_list_media' },
+          ],
           [{ text: '⬅️ Menú Principal', callback_data: 'action_menu' }],
         ],
       },
@@ -670,6 +674,51 @@ async function handleAnnouncementCommand(db, chatId, userId, text, isAdmin) {
   );
 }
 
+// ---------- GESTIÓN DE CINE PRIVADO / DRIVE EN TELEGRAM ----------
+
+async function handleAddMediaCommand(db, chatId, userId, username, text, isAdmin) {
+  if (!isAdmin) {
+    await sendMessage(chatId, `🔒 <b>Solo los administradores pueden registrar contenido en el Cine Privado.</b> 🐾`);
+    return;
+  }
+
+  await setState(chatId, { type: 'WAITING_MEDIA_LINK' });
+  await sendMessage(
+    chatId,
+    `🎬 <b>Publicar Película o Serie en MichiTV</b> 🐾✨\n\n` +
+      `<b>Paso 1 de 2:</b> Envía el enlace de video.\n` +
+      `• Enlace de Google Drive (ej: <code>https://drive.google.com/file/d/1A2B3C.../view</code>)\n` +
+      `• Enlace directo MP4/MKV/HLS (ej: <code>https://servidor.com/pelicula.mp4</code>)\n\n` +
+      `<i>O escribe /cancelar para salir.</i>`
+  );
+}
+
+async function handleMediaListCommand(db, chatId, isAdmin) {
+  if (!isAdmin) {
+    await sendMessage(chatId, `🔒 <b>Solo los administradores pueden administrar el catálogo.</b>`);
+    return;
+  }
+  const mediaList = Object.values(db.custom_media || {});
+  if (mediaList.length === 0) {
+    await sendMessage(chatId, `ℹ️ <b>No hay películas ni series registradas en el Cine Privado aún.</b>\nUsa /agregar para registrar la primera.`);
+    return;
+  }
+
+  let msg = `🎬 <b>Catálogo de Cine Privado (${mediaList.length} títulos)</b> 🐾\n\n`;
+  const keyboard = [];
+  mediaList.slice(0, 15).forEach((item, idx) => {
+    msg += `<b>${idx + 1}. ${item.name}</b> (${item.year || 'N/A'})\n` +
+           `   Tipo: ${item.type === 'series' ? '📺 Serie' : '🎥 Película'}\n` +
+           `   ID: <code>${item.id}</code>\n\n`;
+    keyboard.push([{ text: `🗑 Borrar ${item.name.slice(0, 20)}`, callback_data: `delmedia_${item.id}` }]);
+  });
+
+  keyboard.push([{ text: '➕ Agregar Otro Título', callback_data: 'action_add_media' }]);
+  keyboard.push([{ text: '⬅️ Menú Principal', callback_data: 'action_menu' }]);
+
+  await sendMessage(chatId, msg, { reply_markup: { inline_keyboard: keyboard } });
+}
+
 async function handleSupportMessage(db, chatId, userId, username, text) {
   const ticketId = Date.now().toString(36).toUpperCase().slice(-6);
   db.support_tickets[ticketId] = {
@@ -762,6 +811,64 @@ async function handleMessage(db, msg) {
     } else if (state.type === 'WAITING_SUPPORT_MSG') {
       await handleSupportMessage(db, chatId, userId, username, text);
       return;
+    } else if (state.type === 'WAITING_MEDIA_LINK') {
+      if (text.startsWith('/cancelar')) {
+        await sendMessage(chatId, `❌ Operación cancelada.`);
+        return;
+      }
+      const link = text.trim();
+      await setState(chatId, { type: 'WAITING_MEDIA_TITLE', link });
+      await sendMessage(
+        chatId,
+        `✅ <b>¡Enlace guardado!</b>\n\n` +
+          `<b>Paso 2 de 2:</b> ¿Cómo se llama la película o serie?\n` +
+          `(Ej: <i>Gladiator II</i> o <i>Breaking Bad</i>):\n\n` +
+          `<i>MichiTV buscará la carátula oficial y la sinopsis en segundos.</i>`
+      );
+      return;
+    } else if (state.type === 'WAITING_MEDIA_TITLE') {
+      if (text.startsWith('/cancelar')) {
+        await sendMessage(chatId, `❌ Operación cancelada.`);
+        return;
+      }
+      const titleQuery = text.trim();
+      await sendChatAction(chatId, 'typing');
+      const meta = await searchCinemetaMeta(titleQuery);
+
+      const mediaId = 'media_' + Date.now();
+      const newMedia = {
+        id: mediaId,
+        name: meta ? meta.name : titleQuery,
+        type: meta ? meta.type : 'movie',
+        year: meta ? meta.year : new Date().getFullYear().toString(),
+        poster: meta ? meta.poster : null,
+        background: meta ? meta.background : null,
+        description: meta ? meta.description : 'Película añadida desde Telegram',
+        genres: meta ? meta.genres : ['Cine Privado'],
+        rating: meta ? meta.rating : null,
+        streamUrl: state.link,
+        created_at: new Date().toISOString()
+      };
+
+      if (!db.custom_media) db.custom_media = {};
+      db.custom_media[mediaId] = newMedia;
+
+      let replyMsg = `🎉 <b>¡Título publicado con éxito en MichiTV!</b> 🎬✨\n\n` +
+        `🍿 <b>Nombre:</b> ${newMedia.name} (${newMedia.year})\n` +
+        `📺 <b>Tipo:</b> ${newMedia.type === 'series' ? 'Serie TV' : 'Película'}\n` +
+        `🔗 <b>Enlace:</b> <code>${newMedia.streamUrl}</code>\n\n` +
+        `<i>Ya está visible en la sección "Cine Privado" de la app en todas las TVs.</i>`;
+
+      await sendMessage(chatId, replyMsg, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '➕ Agregar Otro', callback_data: 'action_add_media' }],
+            [{ text: '📋 Ver Catálogo Privado', callback_data: 'action_list_media' }],
+            [{ text: '⬅️ Menú Principal', callback_data: 'action_menu' }]
+          ]
+        }
+      });
+      return;
     }
   }
 
@@ -832,6 +939,14 @@ async function handleMessage(db, msg) {
   if (text === '/michi' || text === '/sticker') {
     await sendRandomCatSticker(chatId);
     await sendMessage(chatId, `🐱 <i>¡Miau! Bendición gatuna para tu día.</i> 🐾`, { reply_markup: mainMenu(isAdmin) });
+    return;
+  }
+  if (text === '/agregar' || text === '/subir' || text === '/nuevapelicula') {
+    await handleAddMediaCommand(db, chatId, userId, username, text, isAdmin);
+    return;
+  }
+  if (text === '/cine' || text === '/catalogo' || text === '/mis_peliculas') {
+    await handleMediaListCommand(db, chatId, isAdmin);
     return;
   }
   if (text.startsWith('/activar')) {
@@ -951,6 +1066,18 @@ async function handleCallback(db, query) {
     const vCode = data.replace('redeem_direct_', '');
     await setState(chatId, { type: 'WAITING_VOUCHER_DEVICE', voucher: vCode });
     await sendMessage(chatId, `🐱 <b>Ahora envía el código de tu pantalla</b> (Ej: <code>MICHI-78B2</code>):`);
+  } else if (data === 'action_add_media' && isAdmin) {
+    await handleAddMediaCommand(db, chatId, userId, username, '', isAdmin);
+  } else if (data === 'action_list_media' && isAdmin) {
+    await handleMediaListCommand(db, chatId, isAdmin);
+  } else if (data.startsWith('delmedia_') && isAdmin) {
+    const mId = data.replace('delmedia_', '');
+    if (db.custom_media && db.custom_media[mId]) {
+      const name = db.custom_media[mId].name;
+      delete db.custom_media[mId];
+      await sendMessage(chatId, `🗑 <b>"${name}" eliminada del Cine Privado.</b>`);
+      await handleMediaListCommand(db, chatId, isAdmin);
+    }
   } else if (data.startsWith('status_')) {
     await processCheckStatus(db, chatId, data.replace('status_', ''));
   }

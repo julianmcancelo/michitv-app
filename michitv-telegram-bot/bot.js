@@ -1485,6 +1485,17 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // Endpoint de catálogo de Cine Privado (películas y series registradas por Telegram)
+    if (url.pathname === '/api/cinema/catalog' || url.pathname === '/api/cinema') {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        const rawList = Object.values(db.custom_media || {});
+        const list = rawList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        res.writeHead(200);
+        res.end(JSON.stringify({ items: list }));
+        return;
+    }
+
     // Endpoint de verificación de estado para la app
     if (url.pathname === '/api/status') {
         const deviceCode = (url.searchParams.get('device') || '').toUpperCase();

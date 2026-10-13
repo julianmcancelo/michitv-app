@@ -33,6 +33,7 @@ function blankDb() {
       maintenance_until: null,
     },
     support_tickets: {},
+    custom_media: {},
   };
 }
 
@@ -45,6 +46,7 @@ function normalizeDb(db) {
     users: db.users && typeof db.users === 'object' ? db.users : {},
     config: { ...base.config, ...(db.config || {}) },
     support_tickets: db.support_tickets && typeof db.support_tickets === 'object' ? db.support_tickets : {},
+    custom_media: db.custom_media && typeof db.custom_media === 'object' ? db.custom_media : {},
   };
 }
 

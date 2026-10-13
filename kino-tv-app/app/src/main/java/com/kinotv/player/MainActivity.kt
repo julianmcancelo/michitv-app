@@ -4867,7 +4867,103 @@ fun TvDriveScreen(
     var manualLinkInput by remember { mutableStateOf("") }
     var isResolvingManualLink by remember { mutableStateOf(false) }
 
+    var activeTab by remember { mutableIntStateOf(0) } // 0: Cine Privado (Telegram), 1: Explorador Drive
+    var cinemaItems by remember { mutableStateOf<List<CatalogItem>>(emptyList()) }
+    var isCinemaLoading by remember { mutableStateOf(false) }
+
     val serverBase = RemoteConfigManager.getServerUrl(context)
+
+    fun loadCinemaCatalog() {
+        isCinemaLoading = true
+        scope.launch {
+            try {
+                val targetUrl = "$serverBase/api/cinema/catalog"
+                val jsonStr = withContext(Dispatchers.IO) {
+                    val conn = (java.net.URL(targetUrl).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000
+                        readTimeout = 8000
+                    }
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.bufferedReader().use { it.readText() }
+                    } else null
+                }
+                if (jsonStr != null) {
+                    val root = org.json.JSONObject(jsonStr)
+                    val rawItems = root.optJSONArray("items")
+                    val parsed = mutableListOf<CatalogItem>()
+                    if (rawItems != null) {
+                        for (i in 0 until rawItems.length()) {
+                            val obj = rawItems.getJSONObject(i)
+                            val genresList = mutableListOf<String>()
+                            val gArr = obj.optJSONArray("genres")
+                            if (gArr != null) {
+                                for (g in 0 until gArr.length()) genresList.add(gArr.getString(g))
+                            }
+                            parsed.add(
+                                CatalogItem(
+                                    id = obj.optString("id"),
+                                    name = obj.optString("name"),
+                                    type = obj.optString("type", "movie"),
+                                    year = obj.optString("year", null),
+                                    poster = obj.optString("poster", null),
+                                    background = obj.optString("background", null),
+                                    description = obj.optString("description", null),
+                                    genres = genresList,
+                                    rating = if (obj.has("rating") && !obj.isNull("rating")) obj.optDouble("rating") else null,
+                                    ref = obj.optString("streamUrl", null)
+                                )
+                            )
+                        }
+                    }
+                    cinemaItems = parsed
+                }
+            } catch (e: Exception) {
+                // Keep current items
+            } finally {
+                isCinemaLoading = false
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadCinemaCatalog()
+    }
+
+    fun playMediaWithDriveCheck(streamUrl: String, title: String) {
+        if (streamUrl.contains("drive.google.com")) {
+            val match = Regex("/d/([a-zA-Z0-9_-]+)").find(streamUrl)
+                ?: Regex("id=([a-zA-Z0-9_-]+)").find(streamUrl)
+            val fileId = match?.groupValues?.get(1)
+            if (fileId != null) {
+                Toast.makeText(context, "Conectando a Google Drive...", Toast.LENGTH_SHORT).show()
+                scope.launch {
+                    try {
+                        val directRes = withContext(Dispatchers.IO) {
+                            val u = "$serverBase/api/drive?action=stream&id=$fileId"
+                            val conn = java.net.URL(u).openConnection() as java.net.HttpURLConnection
+                            if (conn.responseCode == 200) {
+                                conn.inputStream.bufferedReader().use { it.readText() }
+                            } else null
+                        }
+                        if (directRes != null) {
+                            val obj = org.json.JSONObject(directRes)
+                            val finalUrl = obj.optString("url")
+                            if (finalUrl.isNotBlank()) {
+                                onPlayStream(PlayRequest(url = finalUrl, title = title))
+                                return@launch
+                            }
+                        }
+                        // Fallback: direct streamUrl
+                        onPlayStream(PlayRequest(url = streamUrl, title = title))
+                    } catch (e: Exception) {
+                        onPlayStream(PlayRequest(url = streamUrl, title = title))
+                    }
+                }
+                return
+            }
+        }
+        onPlayStream(PlayRequest(url = streamUrl, title = title))
+    }
 
     fun loadPath(path: String) {
         if (indexUrl.isBlank()) {
@@ -4963,7 +5059,9 @@ fun TvDriveScreen(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (indexUrl.isNotBlank()) "Explorando: $currentPath" else "Conecta tu Google Drive Index o reproduce por enlace directo",
+                    text = if (activeTab == 0) "Películas y Series añadidas desde Telegram con enlaces de Drive / Directos"
+                           else if (indexUrl.isNotBlank()) "Explorando: $currentPath"
+                           else "Conecta tu Google Drive Index o reproduce por enlace directo",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = OutfitFontFamily
@@ -4971,172 +5069,277 @@ fun TvDriveScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (currentPath != "/" && currentPath.isNotBlank()) {
+                if (activeTab == 0) {
                     MichiButton(
-                        text = "↑ Subir Carpeta",
-                        onClick = {
-                            val parent = currentPath.removeSuffix("/").substringBeforeLast("/", "")
-                            loadPath(if (parent.isBlank()) "/" else parent)
-                        }
+                        text = "Actualizar ↻",
+                        onClick = { loadCinemaCatalog() }
                     )
-                }
-                MichiButton(
-                    text = "⚙ Servidor / Enlace",
-                    isPrimary = indexUrl.isBlank(),
-                    onClick = { showConfigDialog = true }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        if (indexUrl.isBlank()) {
-            // Pantalla de Bienvenida / Configuración de Drive
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, MichiCyan.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxWidth(0.8f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(MichiCyan.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(imageVector = Icons.Default.CloudSync, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(38.dp))
+                } else {
+                    if (currentPath != "/" && currentPath.isNotBlank()) {
+                        MichiButton(
+                            text = "↑ Subir Carpeta",
+                            onClick = {
+                                val parent = currentPath.removeSuffix("/").substringBeforeLast("/", "")
+                                loadPath(if (parent.isBlank()) "/" else parent)
+                            }
+                        )
                     }
-                    Text(
-                        text = "Conecta tu Servidor Privado de Google Drive",
-                        fontFamily = OutfitFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        text = "Usa Cloudflare Workers (GoIndex / GDIndex) o pega un enlace de Google Drive para reproducir películas y series en 4K/1080p sin límites.",
-                        fontFamily = OutfitFontFamily,
-                        fontSize = 14.sp,
-                        color = Color.LightGray,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 20.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
                     MichiButton(
-                        text = "Configurar Servidor Drive",
-                        isPrimary = true,
+                        text = "⚙ Servidor / Enlace",
+                        isPrimary = indexUrl.isBlank(),
                         onClick = { showConfigDialog = true }
                     )
                 }
             }
-        } else if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MichiCyan)
-            }
-        } else if (errorMessage != null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(text = errorMessage!!, color = Color(0xFFFF5252), fontFamily = OutfitFontFamily, fontSize = 15.sp)
-                    MichiButton(text = "Reintentar ↻", isPrimary = true, onClick = { loadPath(currentPath) })
-                }
-            }
-        } else if (items.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(text = "Esta carpeta está vacía.", color = Color.Gray, fontFamily = OutfitFontFamily)
-            }
-        } else {
-            // Cuadrícula de Archivos y Carpetas de Drive
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(160.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(bottom = 32.dp)
-            ) {
-                items(items) { item ->
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val isFocused by interactionSource.collectIsFocusedAsState()
+        }
 
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-                        ),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(
-                                width = if (isFocused) 2.dp else 1.dp,
-                                color = if (isFocused) MichiCyan else MaterialTheme.colorScheme.outline,
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            .focusable(interactionSource = interactionSource)
-                            .clickable(interactionSource = interactionSource, indication = null) {
-                                if (item.isFolder) {
-                                    val nextPath = if (currentPath == "/") "/${item.name}" else "$currentPath/${item.name}"
-                                    loadPath(nextPath)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Pestañas Superiores de Michi Drive: Cine Privado (Telegram) vs Explorador Index
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            MichiChip(
+                text = "🎬 Cine Privado (${cinemaItems.size})",
+                isSelected = activeTab == 0,
+                onClick = { activeTab = 0 }
+            )
+            MichiChip(
+                text = "📁 Explorador Drive (Index)",
+                isSelected = activeTab == 1,
+                onClick = { activeTab = 1 }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (activeTab == 0) {
+            // ============================================================
+            // PESTAÑA 0: CINE PRIVADO (REGISTRADO VÍA BOT DE TELEGRAM)
+            // ============================================================
+            if (isCinemaLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MichiOrange)
+                }
+            } else if (cinemaItems.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .border(1.dp, MichiOrange.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth(0.7f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(MichiOrange.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(imageVector = Icons.Default.Movie, contentDescription = null, tint = MichiOrange, modifier = Modifier.size(38.dp))
+                        }
+                        Text(
+                            text = "Tu Cine Privado está esperando títulos",
+                            fontFamily = OutfitFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Añade películas y series desde tu celular enviando el enlace de Google Drive o video a tu Bot de Telegram con el comando /agregar.",
+                            fontFamily = OutfitFontFamily,
+                            fontSize = 14.sp,
+                            color = Color.LightGray,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        MichiButton(
+                            text = "Actualizar Catálogo ↻",
+                            isPrimary = true,
+                            onClick = { loadCinemaCatalog() }
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(140.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp)
+                ) {
+                    items(cinemaItems) { item ->
+                        MichiMovieCard(
+                            item = item,
+                            onFocus = {},
+                            onClick = {
+                                val stream = item.ref
+                                if (!stream.isNullOrBlank()) {
+                                    playMediaWithDriveCheck(stream, item.name)
                                 } else {
-                                    val streamUrl = item.streamUrl
-                                    if (!streamUrl.isNullOrBlank()) {
-                                        onPlayStream(
-                                            PlayRequest(
-                                                url = streamUrl,
-                                                title = item.name
-                                            )
-                                        )
-                                    } else {
-                                        Toast.makeText(context, "No se encontró enlace directo para este archivo", Toast.LENGTH_SHORT).show()
-                                    }
+                                    Toast.makeText(context, "No tiene stream asignado", Toast.LENGTH_SHORT).show()
                                 }
                             }
+                        )
+                    }
+                }
+            }
+        } else {
+            // ============================================================
+            // PESTAÑA 1: EXPLORADOR DRIVE DIRECTO / INDEX
+            // ============================================================
+            if (indexUrl.isBlank()) {
+                // Pantalla de Bienvenida / Configuración de Drive
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .border(1.dp, MichiCyan.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth(0.8f)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(MichiCyan.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(CircleShape)
-                                    .background(if (item.isFolder) MichiOrange.copy(alpha = 0.15f) else MichiCyan.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
+                            Icon(imageVector = Icons.Default.CloudSync, contentDescription = null, tint = MichiCyan, modifier = Modifier.size(38.dp))
+                        }
+                        Text(
+                            text = "Conecta tu Servidor Privado de Google Drive",
+                            fontFamily = OutfitFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Usa Cloudflare Workers (GoIndex / GDIndex) o pega un enlace de Google Drive para reproducir películas y series en 4K/1080p sin límites.",
+                            fontFamily = OutfitFontFamily,
+                            fontSize = 14.sp,
+                            color = Color.LightGray,
+                            textAlign = TextAlign.Center,
+                            lineHeight = 20.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        MichiButton(
+                            text = "Configurar Servidor Drive",
+                            isPrimary = true,
+                            onClick = { showConfigDialog = true }
+                        )
+                    }
+                }
+            } else if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MichiCyan)
+                }
+            } else if (errorMessage != null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(text = errorMessage!!, color = Color(0xFFFF5252), fontFamily = OutfitFontFamily, fontSize = 15.sp)
+                        MichiButton(text = "Reintentar ↻", isPrimary = true, onClick = { loadPath(currentPath) })
+                    }
+                }
+            } else if (items.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = "Esta carpeta está vacía.", color = Color.Gray, fontFamily = OutfitFontFamily)
+                }
+            } else {
+                // Cuadrícula de Archivos y Carpetas de Drive
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(160.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp)
+                ) {
+                    items(items) { item ->
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isFocused by interactionSource.collectIsFocusedAsState()
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isFocused) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = if (isFocused) 2.dp else 1.dp,
+                                    color = if (isFocused) MichiCyan else MaterialTheme.colorScheme.outline,
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .focusable(interactionSource = interactionSource)
+                                .clickable(interactionSource = interactionSource, indication = null) {
+                                    if (item.isFolder) {
+                                        val nextPath = if (currentPath == "/") "/${item.name}" else "$currentPath/${item.name}"
+                                        loadPath(nextPath)
+                                    } else {
+                                        val streamUrl = item.streamUrl
+                                        if (!streamUrl.isNullOrBlank()) {
+                                            playMediaWithDriveCheck(streamUrl, item.name)
+                                        } else {
+                                            Toast.makeText(context, "No se encontró enlace directo para este archivo", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Icon(
-                                    imageVector = if (item.isFolder) Icons.Default.Folder else Icons.Default.Movie,
-                                    contentDescription = null,
-                                    tint = if (item.isFolder) MichiOrange else MichiCyan,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = item.name,
-                                fontFamily = OutfitFontFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = Color.White,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center
-                            )
-                            if (!item.isFolder && item.size > 0) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                val sizeMb = item.size / (1024 * 1024)
-                                val sizeText = if (sizeMb > 1024) "%.1f GB".format(sizeMb / 1024.0) else "$sizeMb MB"
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(if (item.isFolder) MichiOrange.copy(alpha = 0.15f) else MichiCyan.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (item.isFolder) Icons.Default.Folder else Icons.Default.Movie,
+                                        contentDescription = null,
+                                        tint = if (item.isFolder) MichiOrange else MichiCyan,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = sizeText,
+                                    text = item.name,
                                     fontFamily = OutfitFontFamily,
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color.White,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center
                                 )
+                                if (!item.isFolder && item.size > 0) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    val sizeMb = item.size / (1024 * 1024)
+                                    val sizeText = if (sizeMb > 1024) "%.1f GB".format(sizeMb / 1024.0) else "$sizeMb MB"
+                                    Text(
+                                        text = sizeText,
+                                        fontFamily = OutfitFontFamily,
+                                        fontSize = 11.sp,
+                                        color = Color.Gray
+                                    )
+                                }
                             }
                         }
                     }
