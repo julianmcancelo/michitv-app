@@ -17,10 +17,12 @@ module.exports = async (req, res) => {
   }
   const maintenance = !!(db.config && db.config.maintenance);
   const until = (db.config && db.config.maintenance_until) || null;
+  const announcement = (db.config && db.config.announcement) || null;
   res.status(200).end(JSON.stringify({
     maintenance,
     message: (db.config && db.config.maintenance_message) || 'Estamos mejorando MichiTV. Volvemos en minutos.',
     maintenance_until: until,
     timeLeft: maintenance && until ? Math.max(0, until - Date.now()) : null,
+    announcement: announcement && announcement.active ? announcement : null,
   }));
 };

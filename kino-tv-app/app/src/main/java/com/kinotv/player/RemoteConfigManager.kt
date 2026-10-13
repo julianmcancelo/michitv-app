@@ -10,7 +10,9 @@ import java.net.URL
 data class RemoteConfig(
     val maintenance: Boolean = false,
     val maintenanceMessage: String = "Estamos mejorando MichiTV. Volvemos en minutos.",
-    val timeLeftMs: Long? = null
+    val timeLeftMs: Long? = null,
+    val announcementId: String? = null,
+    val announcementMessage: String? = null
 )
 
 object RemoteConfigManager {
@@ -60,13 +62,20 @@ object RemoteConfigManager {
                         val tl = if (json.has("timeLeft") && !json.isNull("timeLeft")) {
                             json.optLong("timeLeft")
                         } else null
+                        val announcementObj = json.optJSONObject("announcement")
+                        val aId = announcementObj?.optString("id")?.takeIf { it.isNotBlank() }
+                        val aMsg = announcementObj?.optString("message")?.takeIf { it.isNotBlank() }
+                        val aActive = announcementObj?.optBoolean("active", true) ?: true
+
                         return@withContext RemoteConfig(
                             maintenance = json.optBoolean("maintenance", false),
                             maintenanceMessage = json.optString(
                                 "message",
                                 json.optString("maintenance_message", "Estamos mejorando MichiTV. Volvemos en minutos.")
                             ),
-                            timeLeftMs = tl
+                            timeLeftMs = tl,
+                            announcementId = if (aActive) aId else null,
+                            announcementMessage = if (aActive) aMsg else null
                         )
                     }
                     conn.disconnect()

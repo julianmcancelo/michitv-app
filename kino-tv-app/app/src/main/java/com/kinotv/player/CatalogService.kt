@@ -18,6 +18,17 @@ data class CinemetaDetailResponse(
 )
 
 @Serializable
+data class TrailerItem(
+    val source: String? = null,
+    val type: String? = null
+)
+
+@Serializable
+data class TrailerStreamItem(
+    val ytId: String? = null
+)
+
+@Serializable
 data class DetailMeta(
     val id: String,
     val name: String,
@@ -29,7 +40,9 @@ data class DetailMeta(
     val genres: List<String> = emptyList(),
     val cast: List<String> = emptyList(),
     val director: List<String> = emptyList(),
-    val videos: List<EpisodeItem> = emptyList()
+    val videos: List<EpisodeItem> = emptyList(),
+    val trailers: List<TrailerItem> = emptyList(),
+    val trailerStreams: List<TrailerStreamItem> = emptyList()
 )
 
 @Serializable
@@ -56,7 +69,9 @@ data class CatalogItem(
     val genres: List<String> = emptyList(),
     val pluginId: String? = null,
     val ref: String? = null,
-    val rating: Double? = null
+    val rating: Double? = null,
+    val trailers: List<TrailerItem> = emptyList(),
+    val trailerStreams: List<TrailerStreamItem> = emptyList()
 )
 
 data class CatalogRow(

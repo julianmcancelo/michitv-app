@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -104,9 +105,23 @@ data class PlayRequest(
 
 object AppState {
     var isDarkTheme = androidx.compose.runtime.mutableStateOf(true)
+    var lastInteractionTimestamp = androidx.compose.runtime.mutableStateOf(System.currentTimeMillis())
+    fun notifyUserActivity() {
+        lastInteractionTimestamp.value = System.currentTimeMillis()
+    }
 }
 
 class MainActivity : ComponentActivity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        AppState.notifyUserActivity()
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        AppState.notifyUserActivity()
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppState.isDarkTheme.value = ThemePrefs.isDarkMode(this)
@@ -139,6 +154,33 @@ fun MainAppNavigation() {
     // --- MODO MANTENIMIENTO GLOBAL (Remote Config via Bot) ---
     var remoteConfig by remember { mutableStateOf(RemoteConfig()) }
 
+    // --- ANUNCIOS PUSH EN VIVO ---
+    var activeAnnouncement by remember { mutableStateOf<String?>(null) }
+    val announcementPrefs = remember { context.getSharedPreferences("michi_announcements", android.content.Context.MODE_PRIVATE) }
+
+    // --- SALVAPANTALLAS OLED CINEMÁTICO ---
+    var isScreensaverActive by remember { mutableStateOf(false) }
+
+    // Monitoreo de inactividad para Salvapantallas (3 minutos = 180.000 ms)
+    LaunchedEffect(playingStream, isScreensaverActive) {
+        while (true) {
+            kotlinx.coroutines.delay(5000)
+            if (playingStream == null && !isScreensaverActive) {
+                val idleMs = System.currentTimeMillis() - AppState.lastInteractionTimestamp.value
+                if (idleMs >= 180_000L) {
+                    isScreensaverActive = true
+                }
+            }
+        }
+    }
+
+    // Si hay actividad del usuario, apagar el salvapantallas inmediatamente
+    LaunchedEffect(AppState.lastInteractionTimestamp.value) {
+        if (isScreensaverActive) {
+            isScreensaverActive = false
+        }
+    }
+
     // Polling reactivo en tiempo real para auto-activacion sin escribir nada
     // (pausado si el usuario cerró sesión manualmente: solo reactiva por acción explícita)
     LaunchedEffect(activationInfo.isActivated) {
@@ -156,19 +198,30 @@ fun MainAppNavigation() {
         }
     }
 
-    // Bucle de escucha de mantenimiento cada 5 segundos (en vivo, sin reabrir la app)
+    // Bucle de escucha de mantenimiento y anuncios cada 5 segundos (en vivo, sin reabrir la app)
     LaunchedEffect(activationInfo.isActivated) {
         while (true) {
             val cfg = RemoteConfigManager.fetchConfig(context)
             remoteConfig = cfg
+
+            // Verificar si hay nuevo anuncio
+            val newId = cfg.announcementId
+            val newMsg = cfg.announcementMessage
+            if (!newId.isNullOrBlank() && !newMsg.isNullOrBlank()) {
+                val lastSeenId = announcementPrefs.getString("last_seen_announcement_id", "")
+                if (lastSeenId != newId) {
+                    activeAnnouncement = newMsg
+                    announcementPrefs.edit().putString("last_seen_announcement_id", newId).apply()
+                }
+            }
             kotlinx.coroutines.delay(5000)
         }
     }
 
-    // Dialogo de novedades v2.0.1 (una vez por version)
+    // Dialogo de novedades v2.1.0 (una vez por version)
     var showWhatsNew by remember {
         val prefs = context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-        mutableStateOf(prefs.getString("last_seen_version", "") != "2.0.1")
+        mutableStateOf(prefs.getString("last_seen_version", "") != "2.1.0")
     }
 
     if (!activationInfo.isActivated) {
@@ -332,6 +385,24 @@ fun MainAppNavigation() {
             }
         )
     }
+
+    // --- OVERLAY: NOTIFICACIÓN PUSH EN VIVO ---
+    activeAnnouncement?.let { msg ->
+        MichiNotificationToast(
+            message = msg,
+            onDismiss = { activeAnnouncement = null }
+        )
+    }
+
+    // --- OVERLAY: SALVAPANTALLAS OLED CINEMÁTICO ---
+    if (isScreensaverActive && playingStream == null) {
+        MichiScreensaver(
+            onDismiss = {
+                AppState.notifyUserActivity()
+                isScreensaverActive = false
+            }
+        )
+    }
 }
 
 @Composable
@@ -483,6 +554,36 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
     var rows by remember { mutableStateOf(MediaCache.homeRows ?: emptyList()) }
     var isLoading by remember { mutableStateOf(MediaCache.homeRows == null) }
 
+    // Trailer Preview State & Debounce (1.8s)
+    var activeTrailerYtId by remember { mutableStateOf<String?>(null) }
+    var isTrailerPlaying by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedItem?.id) {
+        isTrailerPlaying = false
+        activeTrailerYtId = null
+        val current = selectedItem ?: return@LaunchedEffect
+
+        // Primero comprobar si ya tiene tráiler en el objeto
+        var ytId: String? = current.trailerStreams.firstOrNull()?.ytId
+            ?: current.trailers.firstOrNull { it.type == "Trailer" || it.source != null }?.source
+
+        // Si no lo tiene directamente, consultar Cinemeta getDetails en segundo plano
+        if (ytId.isNullOrBlank()) {
+            val details = withContext(Dispatchers.IO) {
+                CatalogService.getDetails(current.type, current.id)
+            }
+            ytId = details?.trailerStreams?.firstOrNull()?.ytId
+                ?: details?.trailers?.firstOrNull { it.type == "Trailer" || it.source != null }?.source
+        }
+
+        if (!ytId.isNullOrBlank()) {
+            activeTrailerYtId = ytId
+            // Esperar 1.8 segundos de estabilidad antes de reproducir
+            kotlinx.coroutines.delay(1800)
+            isTrailerPlaying = true
+        }
+    }
+
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         if (MediaCache.homeRows == null) {
@@ -599,19 +700,34 @@ fun TvHomeScreen(onOpenItem: (CatalogItem) -> Unit) {
     ) {
         selectedItem?.let { item ->
             val bgUrl = item.background ?: item.poster
-            if (!bgUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = bgUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(440.dp)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(440.dp)
+            ) {
+                if (!bgUrl.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = bgUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                    )
+                }
+
+                // Reproductor de trailer interactivo/silenciado si está listo
+                if (isTrailerPlaying && !activeTrailerYtId.isNullOrBlank()) {
+                    BannerTrailerPreview(
+                        ytId = activeTrailerYtId!!,
+                        modifier = Modifier
+                            .fillMaxSize()
+                    )
+                }
+
+                // Scrim degradado inferior sobre el video o la imagen
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(440.dp)
+                        .fillMaxSize()
                         .background(HeroBottomScrim)
                 )
             }
@@ -3951,7 +4067,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = "MichiTV 2.0.1",
+                                text = "MichiTV 2.1.0",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 22.sp,
@@ -3966,34 +4082,28 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     MichiWhatsNewRow(
-                        icon = Icons.Filled.QrCode2,
+                        icon = Icons.Filled.Movie,
                         tint = MichiOrange,
-                        title = "Activación con QR",
-                        desc = "Escanea el código o usa /activar en Telegram."
+                        title = "Auto-Preview de Tráilers",
+                        desc = "Previsualiza avances en el banner principal en silencio y sin cortes."
                     )
                     MichiWhatsNewRow(
-                        icon = Icons.Filled.Timer,
+                        icon = Icons.Filled.NotificationsActive,
                         tint = MichiCyan,
-                        title = "Mantenimiento programado",
-                        desc = "Pausas con cuenta regresiva automática."
+                        title = "Anuncios en Vivo desde Telegram",
+                        desc = "Avisos y comunicados instantáneos en pantalla."
                     )
                     MichiWhatsNewRow(
-                        icon = Icons.Filled.SupportAgent,
-                        tint = Color(0xFF00E676),
-                        title = "Soporte en el bot",
-                        desc = "Ayuda directa desde Telegram."
-                    )
-                    MichiWhatsNewRow(
-                        icon = Icons.Filled.HighQuality,
-                        tint = MichiGold,
-                        title = "Reproducción estable",
-                        desc = "Servidor principal prioritario."
-                    )
-                    MichiWhatsNewRow(
-                        icon = Icons.Filled.Palette,
+                        icon = Icons.Filled.NightlightRound,
                         tint = Color(0xFFB388FF),
-                        title = "Ajustes por pestañas",
-                        desc = "Todo organizado y sin cortes."
+                        title = "Salvapantallas OLED Cinemático",
+                        desc = "Reloj digital ambiental y fondos 4K tras 3 minutos de inactividad."
+                    )
+                    MichiWhatsNewRow(
+                        icon = Icons.Filled.QrCode2,
+                        tint = Color(0xFF00E676),
+                        title = "Vinculación QR y Estabilidad",
+                        desc = "Activación instantánea y reproducción ultra fluida."
                     )
 
                     Row(
@@ -4020,7 +4130,7 @@ fun MichiWhatsNewDialog(onDismiss: () -> Unit) {
                         onClick = {
                             if (hideForever) {
                                 context.getSharedPreferences("michi_whatsnew", android.content.Context.MODE_PRIVATE)
-                                    .edit().putString("last_seen_version", "2.0.1").apply()
+                                    .edit().putString("last_seen_version", "2.1.0").apply()
                             }
                             onDismiss()
                         },
@@ -4409,6 +4519,307 @@ fun MichiActivationWallScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
             }
+        }
+    }
+}
+
+// =====================================================================
+// TRILOGÍA CINEMÁTICA: 1. TRAILER AUTO-PREVIEW
+// =====================================================================
+@Composable
+fun BannerTrailerPreview(
+    ytId: String,
+    modifier: Modifier = Modifier
+) {
+    val embedHtml = remember(ytId) {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; background: transparent; overflow: hidden; }
+                html, body { width: 100%; height: 100%; background: #000; }
+                iframe { width: 100%; height: 100%; border: none; pointer-events: none; }
+            </style>
+        </head>
+        <body>
+            <iframe
+                src="https://www.youtube-nocookie.com/embed/$ytId?autoplay=1&mute=1&controls=0&loop=1&playlist=$ytId&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&playsinline=1&enablejsapi=1"
+                frameborder="0"
+                allow="autoplay; encrypted-media"
+                allowfullscreen>
+            </iframe>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    AndroidView(
+        factory = { ctx ->
+            android.webkit.WebView(ctx).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                setBackgroundColor(android.graphics.Color.BLACK)
+                settings.javaScriptEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.domStorageEnabled = true
+                settings.loadWithOverviewMode = true
+                settings.useWideViewPort = true
+                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+                isFocusable = false
+                isClickable = false
+                loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+            }
+        },
+        update = { webView ->
+            webView.loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+        },
+        modifier = modifier
+    )
+}
+
+// =====================================================================
+// TRILOGÍA CINEMÁTICA: 2. NOTIFICACIONES PUSH / ANUNCIOS FLOTANTES
+// =====================================================================
+@Composable
+fun MichiNotificationToast(
+    message: String,
+    onDismiss: () -> Unit
+) {
+    LaunchedEffect(message) {
+        kotlinx.coroutines.delay(10_000) // Desaparece tras 10s
+        onDismiss()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 28.dp, end = 32.dp),
+        contentAlignment = Alignment.TopEnd
+    ) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = true,
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) + androidx.compose.animation.fadeOut()
+        ) {
+            Surface(
+                color = Color(0xEE161922),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, MichiOrange),
+                shadowElevation = 16.dp,
+                modifier = Modifier
+                    .widthIn(max = 440.dp)
+                    .clickable { onDismiss() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(MichiOrange.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📢",
+                            fontSize = 20.sp
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "ANUNCIO MICHITV",
+                                fontFamily = OutfitFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = MichiOrange,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00E676))
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = message,
+                            fontFamily = OutfitFontFamily,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
+                            color = Color.White,
+                            lineHeight = 18.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onDismiss() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cerrar",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =====================================================================
+// TRILOGÍA CINEMÁTICA: 3. SALVAPANTALLAS OLED CINEMÁTICO
+// =====================================================================
+@Composable
+fun MichiScreensaver(
+    onDismiss: () -> Unit
+) {
+    val sampleBackdrops = remember {
+        listOf(
+            "https://image.tmdb.org/t/p/original/8YFL5QQVPy3AgrEQxNYvsgiPEbe.jpg",
+            "https://image.tmdb.org/t/p/original/mBaXZ95R2v4Zhv6vE9g3r6vM0rV.jpg",
+            "https://image.tmdb.org/t/p/original/6KErczPBROQty7QoIsxWZaizv8C.jpg",
+            "https://image.tmdb.org/t/p/original/7I6VUdPj6tQECNHdviJkUHD2f89.jpg",
+            "https://image.tmdb.org/t/p/original/bOGkgRGdhrBYJSLpXaxhXVstddV.jpg"
+        )
+    }
+
+    var backdropIndex by remember { mutableIntStateOf(0) }
+    var currentTimeString by remember { mutableStateOf("") }
+    var currentDateString by remember { mutableStateOf("") }
+
+    // Actualizar reloj cada segundo
+    LaunchedEffect(Unit) {
+        val timeFormat = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        val dateFormat = java.text.SimpleDateFormat("EEEE, d 'de' MMMM", java.util.Locale("es", "ES"))
+        while (true) {
+            val now = java.util.Date()
+            currentTimeString = timeFormat.format(now)
+            currentDateString = dateFormat.format(now).replaceFirstChar { it.uppercase() }
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+
+    // Rotar fondo cada 12 segundos
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(12_000)
+            backdropIndex = (backdropIndex + 1) % sampleBackdrops.size
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .clickable { onDismiss() }
+    ) {
+        // Fondo cinemático suave con atenuación OLED
+        AsyncImage(
+            model = sampleBackdrops[backdropIndex],
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(0.38f)
+        )
+
+        // Degradado radial hacia negro profundo en los bordes
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.5f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.85f)
+                        )
+                    )
+                )
+        )
+
+        // Contenido ambient: Reloj digital grande + Fecha + Branding sutil
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 56.dp, bottom = 48.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "MICHI",
+                    fontFamily = OutfitFontFamily,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp,
+                    color = MichiOrange,
+                    letterSpacing = 2.sp
+                )
+                Text(
+                    text = "TV",
+                    fontFamily = OutfitFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MichiCyan,
+                    letterSpacing = 2.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(Color.Gray)
+                )
+                Text(
+                    text = "CINEMA AMBIENT",
+                    fontFamily = OutfitFontFamily,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = Color.LightGray,
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = currentTimeString,
+                fontFamily = OutfitFontFamily,
+                fontWeight = FontWeight.Light,
+                fontSize = 76.sp,
+                color = Color.White,
+                letterSpacing = (-1).sp
+            )
+
+            Text(
+                text = currentDateString,
+                fontFamily = OutfitFontFamily,
+                fontWeight = FontWeight.Normal,
+                fontSize = 18.sp,
+                color = Color.LightGray.copy(alpha = 0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Text(
+                text = "Presiona cualquier tecla para continuar",
+                fontFamily = OutfitFontFamily,
+                fontWeight = FontWeight.Light,
+                fontSize = 12.sp,
+                color = Color.Gray.copy(alpha = 0.6f)
+            )
         }
     }
 }

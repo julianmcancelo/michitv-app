@@ -988,6 +988,55 @@ async function handleMaintenanceCommand(chatId, userId, text) {
         `<code>/mantenimiento estado</code>`);
 }
 
+// 13b. Anuncio Push en vivo a las TVs (solo admin)
+async function handleAnnouncementCommand(chatId, userId, text) {
+    const isAdmin = config.admin_ids.includes(userId) || config.admin_ids.length === 0;
+    if (!isAdmin) {
+        await sendMessage(chatId, `🔒 <b>Solo el Jefe Michi puede enviar anuncios.</b> 🐾`);
+        return;
+    }
+    const args = String(text || '').split(/\s+/).slice(1);
+    const sub = (args[0] || '').toLowerCase();
+
+    if (sub === 'off' || sub === 'borrar' || sub === 'clear') {
+        if (db.config) db.config.announcement = null;
+        saveDB();
+        await sendMessage(chatId, `✅ <b>Anuncio global eliminado.</b> Las TVs ya no lo mostrarán.`);
+        return;
+    }
+
+    const message = String(text || '').replace(/^\/(anuncio|broadcast)\s*/i, '').trim();
+    if (!message) {
+        const current = db.config?.announcement?.message;
+        await sendMessage(
+            chatId,
+            `📢 <b>Sistema de Anuncios Push a las TVs</b> 🐾\n\n` +
+                (current ? `📌 Anuncio actual activo:\n"<i>${current}</i>"\n\n` : `ℹ️ No hay anuncios activos en este momento.\n\n`) +
+                `<b>Para enviar uno nuevo:</b>\n<code>/anuncio ¡Noche de estrenos! Gladiator II ya disponible 🍿</code>\n\n` +
+                `<b>Para quitar el anuncio:</b>\n<code>/anuncio off</code>`
+        );
+        return;
+    }
+
+    if (!db.config) db.config = {};
+    const annId = 'ann_' + Date.now();
+    db.config.announcement = {
+        id: annId,
+        message,
+        active: true,
+        created_at: new Date().toISOString(),
+    };
+    saveDB();
+
+    await sendMessage(
+        chatId,
+        `📢 <b>¡Anuncio Push transmitido con éxito a las TVs!</b> 🐾✨\n\n` +
+            `💬 Mensaje: "<i>${message}</i>"\n` +
+            `🆔 ID: <code>${annId}</code>\n\n` +
+            `Aparecerá como una notificación flotante animada en todas las TVs activas.`
+    );
+}
+
 // 14. Soporte técnico: ticket del cliente + respuesta del admin por Reply
 async function handleSupportMessage(chatId, userId, username, text) {
     const ticketId = Date.now().toString(36).toUpperCase().slice(-6);
@@ -1199,6 +1248,12 @@ async function handleMessage(msg) {
     // --- COMANDO /mantenimiento (admin: on/off/estado, con minutos opcionales) ---
     if (text.startsWith('/mantenimiento') || text.startsWith('/maintenance')) {
         await handleMaintenanceCommand(chatId, userId, text);
+        return;
+    }
+
+    // --- COMANDO /anuncio (admin: push a las TVs) ---
+    if (text.startsWith('/anuncio') || text.startsWith('/broadcast')) {
+        await handleAnnouncementCommand(chatId, userId, text);
         return;
     }
 
@@ -1418,12 +1473,14 @@ const server = http.createServer((req, res) => {
         const maintenance = !!(db.config && db.config.maintenance);
         const until = (db.config && db.config.maintenance_until) || null;
         const timeLeft = (maintenance && until) ? Math.max(0, until - Date.now()) : null;
+        const announcement = (db.config && db.config.announcement) || null;
         res.writeHead(200);
         res.end(JSON.stringify({
             maintenance: maintenance,
             message: (db.config && db.config.maintenance_message) || "Estamos mejorando MichiTV. Volvemos en minutos.",
             maintenance_until: until,
-            timeLeft: timeLeft
+            timeLeft: timeLeft,
+            announcement: (announcement && announcement.active) ? announcement : null
         }));
         return;
     }

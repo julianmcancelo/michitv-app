@@ -625,6 +625,51 @@ async function handleMaintenanceCommand(db, chatId, userId, text, isAdmin) {
   );
 }
 
+async function handleAnnouncementCommand(db, chatId, userId, text, isAdmin) {
+  if (!isAdmin) {
+    await sendMessage(chatId, `🔒 <b>Solo el Jefe Michi puede enviar anuncios.</b> 🐾`);
+    return;
+  }
+  const args = String(text || '').split(/\s+/).slice(1);
+  const sub = (args[0] || '').toLowerCase();
+
+  if (sub === 'off' || sub === 'borrar' || sub === 'clear') {
+    if (db.config) db.config.announcement = null;
+    await sendMessage(chatId, `✅ <b>Anuncio global eliminado.</b> Las TVs ya no lo mostrarán.`);
+    return;
+  }
+
+  const message = String(text || '').replace(/^\/(anuncio|broadcast)\s*/i, '').trim();
+  if (!message) {
+    const current = db.config?.announcement?.message;
+    await sendMessage(
+      chatId,
+      `📢 <b>Sistema de Anuncios Push a las TVs</b> 🐾\n\n` +
+        (current ? `📌 Anuncio actual activo:\n"<i>${current}</i>"\n\n` : `ℹ️ No hay anuncios activos en este momento.\n\n`) +
+        `<b>Para enviar uno nuevo:</b>\n<code>/anuncio ¡Noche de estrenos! Gladiator II ya disponible 🍿</code>\n\n` +
+        `<b>Para quitar el anuncio:</b>\n<code>/anuncio off</code>`
+    );
+    return;
+  }
+
+  if (!db.config) db.config = {};
+  const annId = 'ann_' + Date.now();
+  db.config.announcement = {
+    id: annId,
+    message,
+    active: true,
+    created_at: new Date().toISOString(),
+  };
+
+  await sendMessage(
+    chatId,
+    `📢 <b>¡Anuncio Push transmitido con éxito a las TVs!</b> 🐾✨\n\n` +
+      `💬 Mensaje: "<i>${message}</i>"\n` +
+      `🆔 ID: <code>${annId}</code>\n\n` +
+      `Aparecerá como una notificación flotante animada en todas las TVs activas.`
+  );
+}
+
 async function handleSupportMessage(db, chatId, userId, username, text) {
   const ticketId = Date.now().toString(36).toUpperCase().slice(-6);
   db.support_tickets[ticketId] = {
@@ -824,6 +869,10 @@ async function handleMessage(db, msg) {
   }
   if (text.startsWith('/mantenimiento') || text.startsWith('/maintenance')) {
     await handleMaintenanceCommand(db, chatId, userId, text, isAdmin);
+    return;
+  }
+  if (text.startsWith('/anuncio') || text.startsWith('/broadcast')) {
+    await handleAnnouncementCommand(db, chatId, userId, text, isAdmin);
     return;
   }
   if (text === '/admin' && isAdmin) {
